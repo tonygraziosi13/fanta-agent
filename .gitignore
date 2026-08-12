@@ -1,0 +1,10 @@
+# Ambiente e Sicurezza
+.env
+.env.*
+*.pem
+keys/
+
+# IDE e Sistema Operativo
+.DS_Store
+.vscode/
+.idea/
