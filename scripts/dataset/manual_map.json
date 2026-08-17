@@ -1,0 +1,19 @@
+{
+  "_commento": [
+    "Override manuali dell'entity resolution (US19-T2).",
+    "Struttura: { \"<fonte>\": { \"<id del listone>\": \"<id nella fonte>\" } }.",
+    "Ha la precedenza su qualunque euristica ed e' il posto dove si risolvono i casi",
+    "che il resolver dichiara ambigui. Su Transfermarkt scavalca anche la ricerca:",
+    "serve per chi non compare nella prima pagina dei risultati.",
+    "La lista dei candidati la stampa il report a fine esecuzione.",
+    "",
+    "5116 = Josep Martinez, portiere dell'Inter. Cercando 'martinez' la prima pagina",
+    "di Transfermarkt e' piena di omonimi piu' famosi e lui non c'e': nessuna",
+    "euristica puo' scegliere un candidato che non ha davanti."
+  ],
+  "understat": {},
+  "transfermarkt": {
+    "5116": "388516"
+  },
+  "sofascore": {}
+}

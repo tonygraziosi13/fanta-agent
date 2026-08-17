@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Fanta Agent",
+    "slug": "fanta-agent",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "fantaagent",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "backgroundColor": "#0B1220",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.fantaagent.app"
+    },
+    "android": {
+      "package": "com.fantaagent.app",
+      "edgeToEdgeEnabled": true
+    },
+    "plugins": ["expo-router", "expo-sqlite"],
+    "extra": {
+      "datasetUrl": "https://raw.githubusercontent.com/tonygraziosi13/fanta-agent/main/dataset/manifest.json"
+    },
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}

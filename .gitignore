@@ -8,3 +8,37 @@ keys/
 .DS_Store
 .vscode/
 .idea/
+
+# Dipendenze
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Build nativi (managed workflow: rigenerati da prebuild)
+android/
+ios/
+
+# Cache della pipeline dataset: risposte HTTP grezze delle fonti esterne.
+# Rigenerabile e pesante — ma NON cancellarla a cuor leggero: senza, la
+# generazione ribussa un migliaio di volte ai siti da cui legge.
+.cache/
+
+# Log e cache
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.jest/
+coverage/
+
+# NOTA: assets/data/listone.csv e' versionato di proposito.
+# E' un artefatto generato ma deterministico, ed e' l'unica fonte dati
+# dell'app al primo avvio: senza, il bootstrap (US7) fallisce.
+#
+# NOTA: anche dataset/ e' versionato di proposito, ma per un'altra ragione:
+# non e' un asset dell'app, e' cio' che viene *pubblicato*. L'app lo scarica
+# da raw.githubusercontent, quindi il commit e' il rilascio (US19-4).
