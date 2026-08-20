@@ -21,12 +21,32 @@ describe('parsing del listone', () => {
     expect(players).toHaveLength(records.length);
   });
 
-  it('importa i 497 giocatori attivi e gli 8 ceduti', () => {
+  /**
+   * Conteggi esatti no, invarianti si'.
+   *
+   * Il listone non e' piu' un file fermo: `npm run listone` lo riallinea alle
+   * quotazioni ufficiali, e a ogni sessione di mercato arrivano acquisti e
+   * partono cessioni. Un `toHaveLength(497)` sarebbe rosso il giorno dopo ogni
+   * aggiornamento — cioe' un test che smette di dire qualcosa e comincia solo a
+   * dare fastidio. Quel che deve restare vero e' la forma: nessuna riga persa,
+   * i ceduti conservati, un ordine di grandezza sensato.
+   */
+  it('divide attivi e ceduti conservando ogni riga', () => {
     const active = players.filter((p) => p.is_active);
     const inactive = players.filter((p) => !p.is_active);
 
-    expect(active).toHaveLength(497);
-    expect(inactive).toHaveLength(8);
+    expect(active.length + inactive.length).toBe(players.length);
+    // I ceduti restano nel listone: cancellarli spezzerebbe le watchlist.
+    expect(inactive.length).toBeGreaterThan(0);
+    // Una Serie A ha ~500 quotati: sotto i 400 e' un file troncato, non mercato.
+    expect(active.length).toBeGreaterThan(400);
+  });
+
+  it('non contiene id duplicati', () => {
+    // L'id e' la chiave dell'upsert e della watchlist: un duplicato farebbe
+    // collassare due giocatori in uno.
+    const ids = players.map((p) => p.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('mappa i campi numerici come numeri, non come stringhe', () => {

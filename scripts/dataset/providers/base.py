@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Protocol, Sequence
 
 from ..http import HttpClient
-from ..model import Contribution, RosterEntry
+from ..model import CascadeState, Contribution, RosterEntry
 from ..resolver import Match
 
 
@@ -37,7 +37,17 @@ class ProviderOutcome:
 
 
 class StatsProvider(Protocol):
-    """Il ruolo che ogni fonte deve saper interpretare."""
+    """
+    Il ruolo che ogni fonte deve saper interpretare.
+
+    `state` e' l'unica cosa che una fonte sa dei livelli a monte, ed e' meno di
+    quanto sembri: dice *se* un giocatore e' gia' coperto, mai da chi. Serve
+    perche' i livelli non hanno lo stesso prezzo — Understat costa cinque
+    richieste in tutto, FBref due per giocatore — e far girare il livello 2 su
+    chi il livello 1 ha gia' risolto significherebbe mille richieste per
+    riscrivere dati che abbiamo. Una fonte che non ha nulla da risparmiare puo'
+    ignorarlo.
+    """
 
     name: str
 
@@ -46,4 +56,5 @@ class StatsProvider(Protocol):
         roster: Sequence[RosterEntry],
         http: HttpClient,
         manual_map: dict[str, dict[str, str]],
+        state: CascadeState,
     ) -> ProviderOutcome: ...

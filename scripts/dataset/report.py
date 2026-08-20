@@ -9,7 +9,7 @@ verrebbe sollevata, semplicemente i match crollerebbero a zero.
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any, Optional, Sequence
 
 from .model import RosterEntry
 from .providers.base import ProviderOutcome
@@ -27,6 +27,60 @@ def summarize(
             "unresolved": len(outcome.unresolved),
             "failed": outcome.failure,
             "strategies": _strategy_counts(outcome),
+        }
+    return summary
+
+
+def summarize_dataset(
+    players: Sequence[dict[str, Any]],
+    outcomes: dict[str, ProviderOutcome],
+    previous: Optional[dict[str, Any]] = None,
+    complete_run: bool = True,
+) -> dict[str, dict[str, Any]]:
+    """
+    La copertura del **dataset**, non della corsa.
+
+    Distinzione che sembra pedante e non lo e': con il delta di esecuzione una
+    corsa puo' toccare dieci giocatori, e `summarize()` direbbe onestamente
+    "understat: 8". Ma quel numero finisce nel payload, e il gate di rilascio lo
+    confronta con i 371 della volta prima: leggerebbe un crollo del 98% e
+    bloccherebbe la pubblicazione di un dataset che invece e' intatto.
+
+    Le coperture si contano quindi sui record finali — quelli appena costruiti e
+    quelli ripresi, insieme.
+
+    `strategies` e `failed` hanno lo stesso problema in forma piu' sottile.
+    Descrivono la *corsa*, e in una corsa incrementale la corsa e' quasi vuota:
+    il conteggio delle strategie si azzererebbe e `failed` tornerebbe a null,
+    cambiando il contenuto del payload — e quindi l'hash, e quindi la versione —
+    senza che un solo dato dei giocatori sia cambiato. E' esattamente il rumore
+    che l'uscita `unchanged` del gate esiste per evitare.
+
+    Quando la corsa non ha attraversato tutto il listone si riportano quindi
+    quelli della volta prima, che e' anche la lettura vera: la provenienza dei
+    record ripresi e' quella di allora, non quella di adesso.
+    """
+    total = len(players)
+    previous_sources = previous or {}
+    summary: dict[str, dict[str, Any]] = {}
+
+    for name, outcome in outcomes.items():
+        matched = sum(1 for p in players if (p.get("coverage") or {}).get(name))
+        before = previous_sources.get(name) or {}
+
+        if complete_run:
+            failed = outcome.failure
+            strategies = _strategy_counts(outcome)
+        else:
+            failed = before.get("failed")
+            strategies = before.get("strategies") or {}
+
+        summary[name] = {
+            "matched": matched,
+            "coverage": round(matched / total, 3) if total else 0.0,
+            "unresolved": total - matched,
+            "failed": failed,
+            "strategies": strategies,
         }
     return summary
 

@@ -11,8 +11,9 @@ Ogni metrica e' `Optional`: assente non significa zero. Vedi il commento in
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
-from typing import Any, Optional
+from dataclasses import dataclass, field, fields, asdict
+from enum import Enum
+from typing import Any, Optional, Sequence
 
 
 @dataclass(frozen=True)
@@ -75,13 +76,6 @@ class Injuries:
 
 
 @dataclass
-class Heatmap:
-    rows: int
-    cols: int
-    cells: list[float]
-
-
-@dataclass
 class Contribution:
     """
     Quel che una singola fonte ha da dire su un giocatore.
@@ -94,7 +88,6 @@ class Contribution:
     performance: Optional[Performance] = None
     advanced: Optional[Advanced] = None
     injuries: Optional[Injuries] = None
-    heatmap: Optional[Heatmap] = None
 
 
 @dataclass
@@ -105,7 +98,6 @@ class PlayerRecord:
     performance: Performance = field(default_factory=Performance)
     advanced: Advanced = field(default_factory=Advanced)
     injuries: Injuries = field(default_factory=Injuries)
-    heatmap: Optional[Heatmap] = None
     coverage: dict[str, bool] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, Any]:
@@ -138,6 +130,93 @@ class PlayerRecord:
                 "risk": self.injuries.risk,
                 "history": [asdict(s) for s in self.injuries.history],
             },
-            "heatmap": asdict(self.heatmap) if self.heatmap else None,
             "coverage": self.coverage,
         }
+
+
+# --- La cascata a tre livelli --------------------------------------------------
+
+
+class Section(str, Enum):
+    """Le due sezioni per cui i livelli si contendono il diritto di scrivere."""
+
+    PERFORMANCE = "performance"
+    ADVANCED = "advanced"
+
+
+@dataclass
+class CascadeState:
+    """
+    Cosa i livelli precedenti hanno gia' coperto.
+
+    E' l'unico canale attraverso cui un provider sa di poter risparmiare
+    richieste, e serve perche' i tre livelli non sono alternative equivalenti:
+    Understat costa cinque richieste *in tutto*, FBref ne costa due *per
+    giocatore*. Far girare il livello 2 su chi il livello 1 ha gia' coperto
+    significherebbe mille richieste a un sito che ci risponde 403 quando si
+    insiste — per riscrivere dati che abbiamo gia'.
+
+    I provider restano ignari l'uno dell'altro: nessuno sa *chi* ha coperto un
+    giocatore, solo che qualcuno l'ha fatto. L'orchestratore aggiorna lo stato
+    dopo ogni fonte.
+    """
+
+    advanced_covered: set[int] = field(default_factory=set)
+    performance_covered: set[int] = field(default_factory=set)
+    """Nome per esteso appreso da un livello a monte: "Martinez Jo." -> "Josep Martinez"."""
+    full_names: dict[str, str] = field(default_factory=dict)
+
+    def _covered(self, section: Section) -> set[int]:
+        return (
+            self.advanced_covered
+            if section is Section.ADVANCED
+            else self.performance_covered
+        )
+
+    def pending(
+        self, roster: Sequence[RosterEntry], section: Section
+    ) -> list[RosterEntry]:
+        """Chi ha ancora bisogno di quella sezione."""
+        covered = self._covered(section)
+        return [entry for entry in roster if entry.id not in covered]
+
+    def covers(self, player_id: int, section: Section) -> bool:
+        return player_id in self._covered(section)
+
+    def absorb(self, contributions: dict[int, "Contribution"]) -> None:
+        """
+        Registra cosa una fonte ha appena coperto.
+
+        Guarda i *campi*, non la presenza della sezione: un `Performance` che
+        contiene solo i minuti non copre il rendimento, e chi lo riceve deve
+        restare in coda per il livello successivo.
+        """
+        for player_id, contribution in contributions.items():
+            if _has_any_value(contribution.advanced):
+                self.advanced_covered.add(player_id)
+            if _covers_performance(contribution.performance):
+                self.performance_covered.add(player_id)
+
+
+def _has_any_value(section: Any) -> bool:
+    if section is None:
+        return False
+    return any(getattr(section, f.name) is not None for f in fields(section))
+
+
+def _covers_performance(performance: Optional[Performance]) -> bool:
+    """
+    I minuti da soli non sono rendimento.
+
+    Understat li fornisce anche per chi ha gia' il rendimento ufficiale da
+    Fantacalcio.it, ed e' il motivo per cui il livello 1 puo' scrivere quel solo
+    campo su un giocatore gia' coperto. Contarlo come copertura spegnerebbe i
+    livelli successivi per chi ha *solo* i minuti e nient'altro.
+    """
+    if performance is None:
+        return False
+    return any(
+        getattr(performance, f.name) is not None
+        for f in fields(performance)
+        if f.name != "minuti"
+    )

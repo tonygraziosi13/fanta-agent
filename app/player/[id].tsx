@@ -18,7 +18,6 @@ import { CategorySheet } from '@/ui/components/CategorySheet';
 import { EmptyState } from '@/ui/components/EmptyState';
 import { RoleBadge } from '@/ui/components/RoleBadge';
 import { MetricUnavailable, RiskBadge, VerdictBadge } from '@/ui/components/stats/Badges';
-import { HeatmapGrid } from '@/ui/components/stats/HeatmapGrid';
 import { SectionCard } from '@/ui/components/stats/SectionCard';
 import { StatBar } from '@/ui/components/stats/StatBar';
 import { colors, radius, spacing, typography } from '@/ui/theme/theme';
@@ -192,12 +191,6 @@ export default function PlayerDetailScreen() {
                 ))}
               </View>
             )}
-          </SectionCard>
-        )}
-
-        {stats?.heatmap != null && (
-          <SectionCard title="Zone di campo" subtitle="Presenza media in campo nella stagione">
-            <HeatmapGrid heatmap={stats.heatmap} />
           </SectionCard>
         )}
       </ScrollView>

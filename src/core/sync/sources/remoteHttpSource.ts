@@ -16,7 +16,13 @@ import { DatasetSourceError, type DatasetSource } from './datasetSource';
  *     merita pazienza.
  */
 
-const MANIFEST_TIMEOUT_MS = 6_000;
+// 6s erano troppo stretti: un server che *rifiuta* puo' farlo con calma. GitHub
+// ritarda di ~3,5s le risposte 429 ai client sotto rate limit, e con il radio
+// mobile in mezzo si superavano i 6s — l'app abortiva prima di ricevere lo stato
+// e riportava un generico "Aborted" al posto della causa vera. Il tetto serve
+// ancora (il boot a freddo aspetta questo prima di ripiegare sul CSV), ma va
+// tenuto sopra la latenza di un rifiuto lento, non sopra quella di un successo.
+const MANIFEST_TIMEOUT_MS = 12_000;
 const PAYLOAD_TIMEOUT_MS = 30_000;
 
 async function fetchJson(url: string, timeoutMs: number): Promise<unknown> {

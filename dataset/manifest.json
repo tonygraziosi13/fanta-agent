@@ -1,9 +1,9 @@
 {
-  "version": "9b0f68c731d1b44f",
-  "hash": "9b0f68c731d1b44fee553a990e7c79e14f1f9ff50a4bb2565c16f411bc305cd3",
+  "version": "5d5b4a2e531913bc",
+  "hash": "5d5b4a2e531913bcf8b665e900455429b2256bcd7794f1b0945c2d50babbe56f",
   "season": "2025-26",
-  "generated_at": "2026-08-17T12:54:06+00:00",
-  "players_count": 505,
-  "size_bytes": 487444,
+  "generated_at": "2026-08-20T10:56:25+00:00",
+  "players_count": 521,
+  "size_bytes": 518422,
   "payload": "players.json"
 }

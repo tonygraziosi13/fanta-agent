@@ -31,46 +31,100 @@ npx expo install --fix
 | `npm start` | Avvia il dev server Expo |
 | `npm test` | Test su parsing, selettori e pipeline (logica pura, nessuna dipendenza nativa) |
 | `npm run typecheck` | `tsc --noEmit` in modalità strict |
-| `npm run listone` | Rigenera `assets/data/listone.csv` dall'`.xlsx` ufficiale |
+| `npm run listone` | Aggiorna `assets/data/listone.csv` dalle quotazioni ufficiali |
+| `npm run listone:xlsx` | Riserva offline: rigenera il CSV da un `.xlsx` scaricato a mano |
 | `npm run dataset` | Rigenera `dataset/players.json` dalle fonti esterne (lento) |
+| `npm run dataset -- --full` | Come sopra, ignorando il delta di esecuzione |
 | `npm run dataset:test` | Test della pipeline dataset (senza rete) |
+| `python scripts/check_release.py <baseline>` | Decide se il dataset generato va pubblicato |
 
 ## Il listone
 
-La fonte ufficiale è `Quotazioni_Fantacalcio_Stagione_2026_27.xlsx` (6 fogli).
-L'app consuma un CSV, come richiesto dalle User Stories: `scripts/xlsx_to_csv.py`
-fa la conversione usando la sola stdlib Python.
+Il listone si aggiorna da solo dalle **quotazioni ufficiali** di Fantacalcio.it, per due
+strade in cascata:
 
-- Foglio `Tutti` → 497 giocatori, `IsActive = 1`
-- Foglio `Ceduti` → 8 giocatori, `IsActive = 0` (restano nel DB: cancellarli
-  romperebbe le watchlist già costruite)
-- I fogli per ruolo sono viste ridondanti di `Tutti` e vengono ignorati
+```bash
+$env:FANTACALCIO_USER = "..."   # lo username, non l'email — facoltativo
+$env:FANTACALCIO_PASS = "..."
+
+npm run listone -- --dry-run    # dice cosa cambierebbe, non scrive
+npm run listone                 # scarica e riscrive assets/data/listone.csv
+npm run listone -- --no-login   # forza la seconda strada
+```
+
+1. **Download autenticato.** Il file `.xlsx` ufficiale è riservato agli utenti
+   registrati: il login avviene con un browser headless (Playwright), che è l'unico modo
+   perché il form passa da JavaScript. Dà il tracciato record completo e i fogli
+   `Tutti` / `Ceduti`.
+2. **Scraping della pagina pubblica.** Non richiede login e scatta da sola quando la
+   prima non è percorribile — credenziali assenti, browser non installato, sito che
+   rifiuta l'IP. È il percorso che ha retto finora, e non un ramo d'emergenza.
+
+Entrambe espongono lo **stesso `Id`** del CSV: la corrispondenza con le statistiche di
+Fantacalcio.it è esatta, senza alcun matching per nome. I ceduti si riconoscono dal
+foglio `Ceduti` o dal marcatore `out-of-game`, a seconda della strada: l'elenco ufficiale
+non toglie nessuno, quindi senza quel flag un venduto resterebbe acquistabile. Chi esce
+**non viene cancellato**: resta con `IsActive = 0`, o si spezzerebbero le watchlist che
+lo contengono.
+
+`scripts/xlsx_to_csv.py` (`npm run listone:xlsx`) resta per convertire a mano un `.xlsx`
+già scaricato, senza rete.
 
 Il CSV generato **è versionato di proposito**: senza, il primo avvio non ha dati.
-A ogni aggiornamento del listone ufficiale, sostituisci l'`.xlsx` e lancia
-`npm run listone`; l'upsert su `id` aggiorna le quotazioni preservando le selezioni.
+L'upsert su `id` aggiorna le quotazioni preservando le selezioni dell'utente. Il
+workflow settimanale lancia il refresh **prima** della pipeline e committa CSV e dataset
+insieme: viaggiano nello stesso commit perché condividono gli `Id`, e separarli
+lascerebbe chi apre l'app senza rete con un listone diverso da chi sincronizza.
 
 ## Il dataset arricchito (Epic 4)
 
 Il CSV imbarcato resta, ma come **fallback**. La fonte primaria è un dataset generato
-fuori dall'app, che aggrega quattro sorgenti pubbliche attorno all'anagrafica del listone.
+fuori dall'app, che aggrega quattro sorgenti pubbliche attorno all'anagrafica del listone
+in una **cascata a tre livelli**: ogni fonte gira solo su chi le precedenti non hanno
+coperto, così quelle costose vedono decine di giocatori invece di centinaia.
 
-| Fonte | Cosa dà | Come |
-|---|---|---|
-| Fantacalcio.it | media voto, fantamedia, presenze, gol, assist | scraping della pagina statistiche; **l'id è lo stesso del listone**, quindi join esatta |
-| Understat | xG, npxG, xA, xGChain, xGBuildup, tiri, passaggi chiave, minuti | endpoint JSON della lega, una richiesta sola |
-| Transfermarkt | storico infortuni → indice di rischio | ricerca + pagina infortuni, ~2 richieste per giocatore |
-| SofaScore | heatmap posizionali | API bloccata (403): il provider c'è, dichiara il fallimento e la pipeline prosegue |
+| # | Fonte | Cosa dà | Come |
+|---|---|---|---|
+| 0 | Fantacalcio.it | media voto, fantamedia, presenze, gol, assist | una pagina; **l'id è lo stesso del listone**, quindi join esatta |
+| 1 | Understat | xG, npxG, xA, xGChain, xGBuildup, tiri, passaggi chiave, minuti | le **top 5 leghe** europee, cinque richieste in tutto |
+| 2 | FBref | xG, npxG, xA, tiri, passaggi chiave | per chi gioca fuori dalle top 5 (Serie B, resto del mondo); ~2 richieste a giocatore, con interruttore automatico se Cloudflare respinge |
+| 3 | Transfermarkt | storico infortuni → indice di rischio, e rendimento grezzo | infortuni per tutti, rendimento solo per chi è ancora scoperto |
+
+Le metriche sono **grezze**: nessun moltiplicatore di lega, un xG in Ligue 1 pesa come
+uno in Serie A. `xGChain` e `xGBuildup` esistono solo al livello 1 — FBref non li
+pubblica, e restano `null` invece di diventare zero.
 
 ```bash
-npm run dataset                                  # tutto
-npm run dataset -- --only understat --limit 30   # prova rapida
+npm run dataset                                  # tutto (delta: solo chi serve)
+npm run dataset -- --full                        # ignora il delta
+npm run dataset -- --only understat --limit 30   # prova rapida, scrive in dataset/preview/
 ```
 
 Produce `dataset/players.json` e `dataset/manifest.json`. Il manifest pesa poche centinaia
 di byte e contiene l'hash del contenuto: l'app scarica **prima quello**, e nel caso normale
-la sincronizzazione finisce lì. Il commit dei due file su GitHub *è* il rilascio — l'app
-legge da `raw.githubusercontent`, URL configurato in `app.json` (`expo.extra.datasetUrl`).
+la sincronizzazione finisce lì. Il commit dei due file su GitHub *è* il rilascio — sono
+serviti da GitHub Pages dalla radice di `main`, URL configurato in `app.json`
+(`expo.extra.datasetUrl`). Il `.nojekyll` in radice serve a Pages e non va rimosso.
+
+### Il rilascio è automatico
+
+`.github/workflows/dataset.yml` rigenera e pubblica ogni lunedì, o a richiesta dalla tab
+Actions (`limit` e `only` servono per una prova rapida). Prima di committare, un gate
+decide:
+
+- **pubblica** se la versione è nuova e nessuna fonte è in regressione;
+- **non pubblica** se l'hash è identico a quello online — a fonti immutate cambierebbe
+  solo il timestamp;
+- **blocca il rilascio** se una fonte è caduta o è crollata sotto il 70% della copertura
+  precedente. Il job diventa rosso *apposta*: il dataset già pubblicato è migliore di
+  quello appena generato, e resta dov'è.
+
+Lo stesso gate è eseguibile in locale contro una copia del dataset online:
+
+```bash
+cp -r dataset /tmp/baseline && npm run dataset
+python scripts/check_release.py /tmp/baseline
+```
 
 **Il listone comanda.** Le metriche si agganciano ai giocatori del listone e mai il
 contrario: chi è nuovo in Serie A resta nel dataset con metriche `null` e un flag di

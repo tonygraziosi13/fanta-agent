@@ -1,0 +1,36 @@
+# Dipendenze della pipeline dataset (scripts/build_dataset.py).
+#
+# Fino al rilascio automatico erano implicite nell'ambiente della macchina di
+# sviluppo: un runner CI non ha quell'ambiente, e "quali pacchetti servono" non
+# era scritto da nessuna parte. Sono tre soltanto — normalizzazione, matching,
+# export e gate di rilascio stanno tutti in stdlib.
+#
+#   pip install -r scripts/requirements.txt
+#
+# `lxml` non e' importato direttamente: e' il parser che BeautifulSoup riceve
+# per nome (`BeautifulSoup(html, "lxml")`) e senza il quale solleva a runtime,
+# a meta' generazione.
+#
+# Minimi e non pin esatti: la pipeline usa API stabili da anni, e un pin
+# stretto qui significherebbe solo un rinnovo manuale ogni pochi mesi. Se una
+# di queste rompesse il parsing, il gate di rilascio se ne accorgerebbe come
+# di qualunque altra regressione di copertura.
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=5.0
+
+# --- Step 1: download autenticato del listone ---
+#
+# L'.xlsx delle quotazioni e' riservato agli utenti registrati, e il login passa
+# per javascript: serve un browser vero. Playwright ha un secondo passo oltre
+# `pip install`, e va fatto anche in CI:
+#
+#   playwright install --with-deps chromium
+#
+# Se manca, `refresh_listone.py` lo dice e ricade sullo scraping della pagina
+# pubblica: la pipeline prosegue, con un listone meno ricco. Non e' quindi una
+# dipendenza bloccante — ma senza, il percorso primario non esiste.
+#
+# La lettura dell'.xlsx e' invece stdlib (`scripts/dataset/listone_xlsx.py`):
+# un .xlsx e' uno ZIP di XML, e ne' pandas ne' openpyxl servono.
+playwright>=1.40

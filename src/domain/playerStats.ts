@@ -16,7 +16,7 @@
  */
 
 /** Nome della fonte, come lo scrive la pipeline in `scripts/dataset/`. */
-export const STATS_SOURCES = ['understat', 'fantacalcio', 'transfermarkt', 'sofascore'] as const;
+export const STATS_SOURCES = ['understat', 'fantacalcio', 'fbref', 'transfermarkt'] as const;
 export type StatsSource = (typeof STATS_SOURCES)[number];
 
 /** Quali fonti hanno coperto questo giocatore. Assente = false. */
@@ -75,20 +75,6 @@ export interface InjuryProfile {
   history: InjurySpell[];
 }
 
-/**
- * Heatmap posizionale come griglia gia' aggregata (fonte: SofaScore).
- *
- * La pipeline converte le coordinate grezze in una griglia `rows x cols` di
- * intensita' normalizzate 0..1: l'app disegna celle, non elabora punti. Rende
- * il rendering banale e il payload piccolo.
- */
-export interface Heatmap {
-  rows: number;
-  cols: number;
-  /** `rows * cols` valori 0..1, in ordine di lettura (riga per riga). */
-  cells: number[];
-}
-
 export interface PlayerStats {
   playerId: number;
   /** Stagione di riferimento delle metriche, es. "2025-26". */
@@ -96,7 +82,6 @@ export interface PlayerStats {
   performance: SeasonPerformance;
   advanced: AdvancedMetrics;
   injuries: InjuryProfile;
-  heatmap: Heatmap | null;
   coverage: Coverage;
   updatedAt: number;
 }
@@ -123,7 +108,7 @@ export interface PlayerStatsDbRow {
   injury_days: number | null;
   injury_matches: number | null;
   injury_risk: number | null;
-  /** JSON: `{ heatmap, injuryHistory }`. */
+  /** JSON: `{ injuryHistory }`. */
   extra: string | null;
   /** JSON: mappa fonte -> boolean. */
   coverage: string | null;
@@ -132,7 +117,6 @@ export interface PlayerStatsDbRow {
 
 /** Contenuto della colonna `extra`: cio' che non ha forma tabellare. */
 export interface PlayerStatsExtra {
-  heatmap?: Heatmap;
   injuryHistory?: InjurySpell[];
 }
 
@@ -181,7 +165,6 @@ export function rowToPlayerStats(row: PlayerStatsDbRow): PlayerStats {
       risk: row.injury_risk,
       history: extra.injuryHistory ?? [],
     },
-    heatmap: extra.heatmap ?? null,
     coverage: parseJson<Coverage>(row.coverage, {}),
     updatedAt: row.updated_at,
   };

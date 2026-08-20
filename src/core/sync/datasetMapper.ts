@@ -113,22 +113,9 @@ function mapStats(remote: RemotePlayer, season: string, updatedAt: number): Play
           }))
         : [],
     },
-    heatmap: isValidHeatmap(remote.heatmap) ? remote.heatmap : null,
     coverage: toCoverage(remote.coverage),
     updatedAt,
   };
-}
-
-/** Una griglia con meno celle di quante ne dichiara manderebbe la UI fuori indice. */
-function isValidHeatmap(raw: RemotePlayer['heatmap']): raw is NonNullable<RemotePlayer['heatmap']> {
-  return (
-    raw !== null &&
-    raw !== undefined &&
-    Array.isArray(raw.cells) &&
-    raw.cells.length === raw.rows * raw.cols &&
-    raw.rows > 0 &&
-    raw.cols > 0
-  );
 }
 
 /**

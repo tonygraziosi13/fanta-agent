@@ -19,7 +19,7 @@
     },
     "plugins": ["expo-router", "expo-sqlite"],
     "extra": {
-      "datasetUrl": "https://raw.githubusercontent.com/tonygraziosi13/fanta-agent/main/dataset/manifest.json"
+      "datasetUrl": "https://tonygraziosi13.github.io/fanta-agent/dataset/manifest.json"
     },
     "experiments": {
       "typedRoutes": false

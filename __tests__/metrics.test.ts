@@ -66,7 +66,6 @@ function stats(overrides: Partial<PlayerStats> = {}): PlayerStats {
       keyPasses: 25,
     },
     injuries: { days: 40, matches: 6, risk: 0.13, history: [] },
-    heatmap: null,
     coverage: { understat: true, fantacalcio: true },
     updatedAt: 0,
     ...overrides,

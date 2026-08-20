@@ -10,7 +10,7 @@ import type { PlayerStats } from '@/domain/playerStats';
  * tutti, e una query SQL per riga distruggerebbe il framerate (US2-T4). Qui vale
  * l'opposto: la schermata di dettaglio mostra un giocatore alla volta, e in una
  * sessione d'asta se ne aprono forse trenta. Caricare in anticipo cinquecento
- * righe di metriche — heatmap e storico infortuni compresi — costerebbe memoria
+ * righe di metriche — storico infortuni compreso — costerebbe memoria
  * e tempo di avvio per dati che nessuno guardera'.
  *
  * L'invariante "filtri e ricerca non toccano il database" resta intatta: questa

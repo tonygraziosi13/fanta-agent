@@ -19,7 +19,7 @@ from bs4 import BeautifulSoup
 
 from .. import config
 from ..http import HttpClient, HttpError
-from ..model import Contribution, Performance, RosterEntry
+from ..model import CascadeState, Contribution, Performance, RosterEntry
 from ..resolver import Candidate, Match, make_candidate
 from .base import ProviderOutcome
 
@@ -50,7 +50,10 @@ class FantacalcioStatsProvider:
         roster: Sequence[RosterEntry],
         http: HttpClient,
         manual_map: dict[str, dict[str, str]],
+        state: CascadeState,
     ) -> ProviderOutcome:
+        # Primo livello della cascata: non ha nulla da risparmiare (una pagina
+        # per tutto il listone) e quindi ignora lo stato.
         outcome = ProviderOutcome()
 
         try:

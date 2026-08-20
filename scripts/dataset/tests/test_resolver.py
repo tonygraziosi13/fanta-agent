@@ -73,6 +73,33 @@ class NormalizeTest(unittest.TestCase):
         self.assertEqual(normalize_teams("Napoli,Torino"), {"napoli", "torino"})
         self.assertEqual(normalize_team("AC Milan"), "milan")
 
+    def test_sigla_societaria_tolta_per_struttura(self):
+        """
+        Regressione: "ac monza" non era nella tabella degli alias, e il portiere
+        del Monza restava senza statistiche pur avendo davanti un candidato con
+        cognome, ruolo e squadra giusti. Nessun errore, solo un match in meno.
+        Ora la sigla si toglie per struttura e la tabella non va piu' inseguita
+        a ogni promozione.
+        """
+        for grezzo, atteso in [
+            ("AC Monza", "monza"),
+            ("Venezia FC", "venezia"),
+            ("Frosinone Calcio", "frosinone"),
+            ("Bologna FC 1909", "bologna"),
+            ("US Cremonese", "cremonese"),
+        ]:
+            self.assertEqual(normalize_team(grezzo), atteso, grezzo)
+
+    def test_alias_restano_per_cio_che_la_struttura_non_deduce(self):
+        self.assertEqual(normalize_team("FC Internazionale"), "inter")
+        self.assertEqual(normalize_team("Hellas Verona"), "verona")
+
+    def test_non_confonde_club_diversi(self):
+        # Togliere le sigle non deve fondere squadre che sigle a parte
+        # restano distinte.
+        self.assertNotEqual(normalize_team("Club Atletico Morelia"), normalize_team("AC Monza"))
+        self.assertEqual(normalize_team("svincolato"), "svincolato")
+
 
 class ResolverTest(unittest.TestCase):
     def test_caso_martinez_non_fonde_portiere_e_attaccante(self):

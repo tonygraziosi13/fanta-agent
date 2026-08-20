@@ -60,8 +60,12 @@ export function selectSyncNotice(state: SyncState): string | null {
     return `Listone aggiornato: ${outcome.players} calciatori, ${outcome.stats} con statistiche.`;
   }
   if (outcome.status === 'failed') {
+    // Anche quando l'errore e' transitorio si dice *quale*: "nessuna connessione"
+    // da solo copriva indistintamente il telefono in galleria, il server che
+    // risponde 429 e l'URL irraggiungibile, e mandava a caccia della causa
+    // sbagliata. La rassicurazione sui dati resta, la diagnosi si aggiunge.
     return outcome.transient
-      ? 'Aggiornamento non riuscito: nessuna connessione. I dati attuali restano disponibili.'
+      ? `Aggiornamento non riuscito: ${outcome.error}. I dati attuali restano disponibili.`
       : `Aggiornamento non riuscito: ${outcome.error}`;
   }
   return null;

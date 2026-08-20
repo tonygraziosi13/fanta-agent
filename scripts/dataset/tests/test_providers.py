@@ -15,8 +15,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from dataset.providers.fantacalcio_stats import FantacalcioStatsProvider
-from dataset.providers.sofascore import build_heatmap
-from dataset.providers.transfermarkt import TransfermarktProvider
+from dataset.model import CascadeState
+from dataset.providers.transfermarkt import TransfermarktProvider, _search_variants
 
 # Riproduce la struttura reale della riga di ricerca di Transfermarkt.
 # Il club e' "AS Roma" di proposito: e' il caso che ha rotto il parsing.
@@ -76,6 +76,86 @@ INJURIES_HTML = """
 """
 
 
+PERFORMANCE_JSON = """
+{
+ "data": {
+  "performance": [
+   {
+    "gameInformation": {
+     "seasonId": 2025,
+     "isNationalGame": false
+    },
+    "statistics": {
+     "generalStatistics": {
+      "participationState": "played"
+     },
+     "playingTimeStatistics": {
+      "playedMinutes": 90
+     },
+     "goalStatistics": {
+      "goalsScoredTotal": 1,
+      "assists": 0
+     },
+     "cardStatistics": {
+      "yellowCardNet": 1
+     }
+    }
+   },
+   {
+    "gameInformation": {
+     "seasonId": 2025,
+     "isNationalGame": false
+    },
+    "statistics": {
+     "generalStatistics": {
+      "participationState": "played"
+     },
+     "playingTimeStatistics": {
+      "playedMinutes": 45
+     },
+     "goalStatistics": {
+      "goalsScoredTotal": 0,
+      "assists": 2
+     },
+     "cardStatistics": {
+      "redCard": 1
+     }
+    }
+   },
+   {
+    "gameInformation": {
+     "seasonId": 2025,
+     "isNationalGame": true
+    },
+    "statistics": {
+     "generalStatistics": {
+      "participationState": "played"
+     },
+     "playingTimeStatistics": {
+      "playedMinutes": 90
+     },
+     "goalStatistics": {
+      "goalsScoredTotal": 3
+     }
+    }
+   },
+   {
+    "gameInformation": {
+     "seasonId": 2025,
+     "isNationalGame": false
+    },
+    "statistics": {
+     "generalStatistics": {
+      "participationState": "bench"
+     }
+    }
+   }
+  ]
+ }
+}
+"""
+
+
 class FakeHttp:
     """
     Sostituto di `HttpClient`: e' possibile solo perche' nessun provider importa
@@ -87,7 +167,12 @@ class FakeHttp:
         self.calls: list[str] = []
 
     def fetch(self, url, params=None, **kwargs):
-        key = "search" if "schnellsuche" in url else "injuries"
+        if "schnellsuche" in url:
+            key = "search"
+        elif "performance-game" in url:
+            key = "performance"
+        else:
+            key = "injuries"
         self.calls.append(key)
         return self.pages[key]
 
@@ -115,8 +200,9 @@ def roster_entry(player_id: int, name: str, team: str, role: str = "P"):
 
 class TransfermarktCollectTest(unittest.TestCase):
     def test_flusso_completo_su_un_giocatore(self):
-        http = FakeHttp({"search": TRANSFERMARKT_SEARCH_HTML, "injuries": INJURIES_HTML})
-        outcome = TransfermarktProvider().collect([roster_entry(1, "Svilar", "Roma")], http, {})
+        http = FakeHttp({"search": TRANSFERMARKT_SEARCH_HTML, "injuries": INJURIES_HTML,
+                          "performance": PERFORMANCE_JSON})
+        outcome = TransfermarktProvider().collect([roster_entry(1, "Svilar", "Roma")], http, {}, CascadeState())
 
         self.assertIn(1, outcome.contributions)
         injuries = outcome.contributions[1].injuries
@@ -131,9 +217,13 @@ class TransfermarktCollectTest(unittest.TestCase):
         Due omonimi, un solo profilo: senza la fase di risoluzione dei conflitti
         entrambi riceverebbero lo storico clinico della stessa persona.
         """
-        http = FakeHttp({"search": TRANSFERMARKT_SEARCH_HTML, "injuries": INJURIES_HTML})
+        http = FakeHttp({"search": TRANSFERMARKT_SEARCH_HTML, "injuries": INJURIES_HTML,
+                          "performance": PERFORMANCE_JSON})
         outcome = TransfermarktProvider().collect(
-            [roster_entry(1, "Svilar", "Roma"), roster_entry(2, "Svilar", "Como")], http, {}
+            [roster_entry(1, "Svilar", "Roma"), roster_entry(2, "Svilar", "Como")],
+            http,
+            {},
+            CascadeState(),
         )
 
         self.assertEqual(len(outcome.contributions), 1)
@@ -148,17 +238,43 @@ class TransfermarktCollectTest(unittest.TestCase):
         lui non ci compare. Un override che agisse solo sulla scelta fra i
         candidati trovati sarebbe inutile proprio quando serve.
         """
-        http = FakeHttp({"search": TRANSFERMARKT_SEARCH_HTML, "injuries": INJURIES_HTML})
+        http = FakeHttp({"search": TRANSFERMARKT_SEARCH_HTML, "injuries": INJURIES_HTML,
+                          "performance": PERFORMANCE_JSON})
         outcome = TransfermarktProvider().collect(
             [roster_entry(5116, "Martinez Jo.", "Inter")],
             http,
             {"transfermarkt": {"5116": "388516"}},
+            CascadeState(),
         )
 
         self.assertIn(5116, outcome.contributions)
         self.assertEqual(outcome.matches[5116].strategy, "mappa-manuale")
         # Nessuna ricerca effettuata: si va dritti alla pagina infortuni.
-        self.assertEqual(http.calls, ["injuries"])
+        self.assertEqual(http.calls, ["injuries", "performance"])
+
+
+class SearchVariantsTest(unittest.TestCase):
+    """
+    Regressione: la query di ricerca non puo' usare la stessa forma del
+    confronto. `normalize_text` trasforma i trattini in spazi — corretto per
+    far collassare "Milinkovic-Savic" e "Milinkovic Savic" — ma cercare
+    "norton cuffy" su Transfermarkt restituisce zero risultati, mentre
+    "norton-cuffy" restituisce esattamente lui.
+    """
+
+    def test_ripristina_il_trattino(self):
+        self.assertIn("norton-cuffy", _search_variants("Norton-Cuffy", "norton cuffy"))
+
+    def test_toglie_liniziale_del_nome(self):
+        self.assertIn("milinkovic-savic", _search_variants("Milinkovic-Savic S.", "milinkovic savic"))
+
+    def test_ultimo_token_per_i_cognomi_composti(self):
+        self.assertIn("fuente", _search_variants("De La Fuente", "de la fuente"))
+
+    def test_cognome_semplice_non_genera_varianti(self):
+        """Nessuna richiesta in piu' per chi si risolve al primo colpo."""
+        self.assertEqual(_search_variants("Thiam", "thiam"), [])
+        self.assertEqual(_search_variants("Kristensen T.", "kristensen"), [])
 
 
 class FantacalcioParsingTest(unittest.TestCase):
@@ -175,22 +291,6 @@ class FantacalcioParsingTest(unittest.TestCase):
         self.assertEqual(performance.gol, 14)
         # "-" significa assente, non zero.
         self.assertIsNone(performance.espulsioni)
-
-
-class HeatmapTest(unittest.TestCase):
-    def test_normalizza_sul_proprio_massimo(self):
-        heatmap = build_heatmap([{"x": 10, "y": 10, "count": 5}, {"x": 90, "y": 90, "count": 1}], rows=2, cols=2)
-
-        self.assertIsNotNone(heatmap)
-        self.assertEqual(len(heatmap.cells), 4)
-        self.assertEqual(max(heatmap.cells), 1.0)
-
-    def test_nessun_punto_nessuna_heatmap(self):
-        # Una griglia di zeri si disegnerebbe come "non gioca mai in campo".
-        self.assertIsNone(build_heatmap([]))
-
-    def test_ignora_punti_malformati(self):
-        self.assertIsNone(build_heatmap([{"x": "boh", "y": None}], rows=2, cols=2))
 
 
 if __name__ == "__main__":

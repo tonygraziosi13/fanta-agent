@@ -94,7 +94,6 @@ export class BundledSource implements DatasetSource {
             key_passes: null,
           },
           injuries: { days: null, matches: null, risk: null, history: [] },
-          heatmap: null,
           coverage: {},
         })
       ),

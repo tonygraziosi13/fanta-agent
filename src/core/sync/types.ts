@@ -72,12 +72,6 @@ export interface RemoteInjuries {
   history: RemoteInjurySpell[];
 }
 
-export interface RemoteHeatmap {
-  rows: number;
-  cols: number;
-  cells: number[];
-}
-
 export interface RemotePlayer {
   id: number;
   r: string;
@@ -89,7 +83,6 @@ export interface RemotePlayer {
   performance: RemotePerformance;
   advanced: RemoteAdvanced;
   injuries: RemoteInjuries;
-  heatmap: RemoteHeatmap | null;
   coverage: Record<string, boolean>;
 }
 

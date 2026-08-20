@@ -20,7 +20,7 @@
  * v3 (US20-T1) aggiunge le metriche avanzate e il versionamento del dataset
  * remoto. Le statistiche vivono in `player_stats`, tabella separata 1:1 con
  * `players` e non colonne aggiunte a quest'ultima: il listone sta interamente in
- * RAM per lo scroll (US1-T3), e appenderci xG, storico infortuni e heatmap
+ * RAM per lo scroll (US1-T3), e appenderci xG e storico infortuni
  * gonfierebbe 497 righe per una schermata che ne mostra una alla volta.
  * Il dettaglio (US21) si legge invece una riga per volta, su richiesta.
  */
@@ -93,7 +93,7 @@ CREATE INDEX IF NOT EXISTS idx_watchlist_config
  * Serie A non ha xG "pari a zero", non ha xG *del tutto*. Confondere i due casi
  * mostrerebbe all'utente uno scarso rendimento dove non c'e' alcun dato.
  *
- * `extra` raccoglie in JSON cio' che non ha una forma fissa (heatmap, storico
+ * `extra` raccoglie in JSON cio' che non ha una forma fissa (storico
  * infortuni dettagliato): sono dati che la UI mostra e non interroga mai, quindi
  * non meritano colonne. `coverage` dice quali fonti hanno effettivamente coperto
  * il giocatore, ed e' cio' che distingue "dato assente" da "valore nullo".
@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS player_stats (
   injury_matches  INTEGER,
   injury_risk     REAL,
 
-  -- Payload variabile: heatmap, storico infortuni dettagliato.
+  -- Payload variabile: storico infortuni dettagliato.
   extra           TEXT,
   -- Flag di copertura per fonte, in JSON.
   coverage        TEXT,

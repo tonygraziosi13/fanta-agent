@@ -55,8 +55,6 @@ def build_records(
                 record.advanced = merge_section(record.advanced, contribution.advanced)
             if contribution.injuries is not None:
                 record.injuries = contribution.injuries
-            if contribution.heatmap is not None:
-                record.heatmap = contribution.heatmap
 
             record.coverage[source] = True
 

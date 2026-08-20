@@ -10,19 +10,39 @@ sito, e `--limit` permette di provarlo su pochi giocatori prima di lanciarlo tut
 --- Perche' l'indice si calcola qui e non nell'app ---
 US19-3 e' esplicita: niente calcoli complessi sul dispositivo. L'app riceve un
 numero 0..1 gia' pronto, e in `metrics.ts` decide solo in che fascia cade.
+
+--- Due mestieri, non uno ---
+Gli infortuni valgono per *tutti*: sono l'unica sezione che nessun altro livello
+sa produrre, e il profilo va comunque risolto per chiunque. Il rendimento
+invece e' il LIVELLO 3 della cascata, l'ultima spiaggia: si scarica solo per chi
+ne' Understat ne' FBref hanno coperto. E' un endpoint in piu' per giocatore, e
+pagarlo per i 400 gia' risolti sarebbe spreco puro.
+
+Le metriche analitiche non esistono su Transfermarkt: chi si ferma qui le ha
+tutte e otto a null, ed e' un'informazione vera che non va mascherata.
 """
 
 from __future__ import annotations
 
+import json
 import re
-from typing import Optional, Sequence
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Optional, Sequence
 
 from bs4 import BeautifulSoup
 
 from .. import config
 from ..http import HttpClient, HttpError
-from ..model import Contribution, InjurySpell, Injuries, RosterEntry
-from ..normalize import normalize_team, parse_listone_name
+from ..model import (
+    CascadeState,
+    Contribution,
+    InjurySpell,
+    Injuries,
+    Performance,
+    RosterEntry,
+    Section,
+)
+from ..normalize import normalize_team, parse_listone_name, strip_accents
 from ..resolver import Candidate, EntityResolver, Match, make_candidate
 from .base import ProviderOutcome
 
@@ -59,6 +79,39 @@ def _first_int(text: str) -> Optional[int]:
     return int(match.group()) if match else None
 
 
+def _search_variants(raw_name: str, surname: str) -> list[str]:
+    """
+    Riformulazioni da provare quando la ricerca non restituisce nulla.
+
+    `normalize_text` trasforma i trattini in spazi, ed e' corretto per il
+    *confronto*: "Milinkovic-Savic" e "Milinkovic Savic" devono collassare. Ma
+    la stessa stringa finisce come *query*, e li' il trattino conta: cercare
+    "norton cuffy" su Transfermarkt restituisce zero risultati, "norton-cuffy"
+    restituisce esattamente lui. Due usi diversi che non possono condividere la
+    forma.
+
+    Le varianti costano una richiesta ciascuna e si tentano solo dopo un buco:
+    per i giocatori che si risolvono al primo colpo — la larga maggioranza — il
+    costo di rete non cambia di nulla.
+    """
+    varianti: list[str] = []
+
+    # L'iniziale del nome ("Kristensen T.") non appartiene al cognome cercato.
+    grezzo = strip_accents(raw_name).lower().strip()
+    grezzo = re.sub(r"\s+[a-z]{1,2}\.?$", "", grezzo).strip()
+
+    if "-" in grezzo and grezzo != surname:
+        varianti.append(grezzo)
+
+    # Ultimo token: "de la fuente" -> "fuente". Chi ha un cognome composto e'
+    # spesso indicizzato sotto la sola parte finale.
+    tokens = surname.split()
+    if len(tokens) > 1 and tokens[-1] not in varianti:
+        varianti.append(tokens[-1])
+
+    return varianti
+
+
 class TransfermarktProvider:
     name = "transfermarkt"
 
@@ -67,6 +120,7 @@ class TransfermarktProvider:
         roster: Sequence[RosterEntry],
         http: HttpClient,
         manual_map: dict[str, dict[str, str]],
+        state: CascadeState,
     ) -> ProviderOutcome:
         """
         Due fasi, e non una sola per giocatore.
@@ -76,65 +130,112 @@ class TransfermarktProvider:
         possono agganciarsi allo stesso profilo e ricevere entrambi lo storico
         clinico di uno solo. Si raccolgono quindi prima tutte le rivendicazioni,
         si assegna ogni profilo a chi lo rivendica con piu' confidenza, e solo
-        dopo si scaricano gli infortuni.
+        dopo si scaricano infortuni e rendimento.
 
-        Effetto collaterale gradito: le pagine infortuni si scaricano solo per i
-        vincitori, quindi la fonte riceve meno richieste.
+        Effetto collaterale gradito: le pagine di dettaglio si scaricano solo per
+        i vincitori, quindi la fonte riceve meno richieste.
         """
         outcome = ProviderOutcome()
 
-        claims, aborted = self._collect_claims(roster, http, manual_map, outcome)
+        claims, aborted = self._collect_claims(roster, http, manual_map, state, outcome)
         if aborted:
             return outcome
 
-        for player_key, (entry, match, slug) in self._resolve_conflicts(claims, outcome).items():
-            try:
-                injuries = self._fetch_injuries(slug, player_key, http)
-            except HttpError:
-                outcome.unresolved.append(entry)
-                continue
+        winners = self._resolve_conflicts(claims, outcome)
 
-            if injuries is None:
-                # Profilo trovato ma nessun infortunio registrato: e' un dato,
-                # ed e' il migliore possibile. Zero giorni, rischio nullo.
-                injuries = Injuries(days=0, matches=0, risk=0.0, history=[])
-
-            outcome.contributions[entry.id] = Contribution(injuries=injuries)
-            outcome.matches[entry.id] = match
+        # Il grosso del tempo di questa fonte sta qui: una o due richieste per
+        # vincitore. E' il punto in cui il parallelismo paga davvero, e la porta
+        # di rete tiene comunque il ritmo entro i limiti dell'host.
+        with ThreadPoolExecutor(max_workers=config.MAX_WORKERS) as pool:
+            results = pool.map(
+                lambda item: self._fetch_details(item[0], item[1], http, state),
+                winners.items(),
+            )
+            for (entry, match, _slug), contribution in zip(winners.values(), results):
+                if contribution is None:
+                    outcome.unresolved.append(entry)
+                    continue
+                outcome.contributions[entry.id] = contribution
+                outcome.matches[entry.id] = match
 
         return outcome
+
+    def _fetch_details(
+        self,
+        player_key: str,
+        claim: Claim,
+        http: HttpClient,
+        state: CascadeState,
+    ) -> Optional[Contribution]:
+        """Infortuni per tutti; rendimento solo per chi e' arrivato fin qui scoperto."""
+        entry, _match, slug = claim
+
+        try:
+            injuries = self._fetch_injuries(slug, player_key, http)
+        except HttpError:
+            return None
+
+        if injuries is None:
+            # Profilo trovato ma nessun infortunio registrato: e' un dato, ed e'
+            # il migliore possibile. Zero giorni, rischio nullo.
+            injuries = Injuries(days=0, matches=0, risk=0.0, history=[])
+
+        performance = None
+        if not state.covers(entry.id, Section.PERFORMANCE):
+            try:
+                performance = self._fetch_performance(player_key, http)
+            except HttpError:
+                performance = None
+
+        return Contribution(injuries=injuries, performance=performance)
 
     def _collect_claims(
         self,
         roster: Sequence[RosterEntry],
         http: HttpClient,
         manual_map: dict[str, dict[str, str]],
+        state: CascadeState,
         outcome: ProviderOutcome,
     ) -> tuple[dict[str, list[Claim]], bool]:
-        """Fase 1: chi rivendica quale profilo. Il bool dice se si e' rinunciato."""
-        claims: dict[str, list[Claim]] = {}
-        failures = 0
+        """
+        Fase 1: chi rivendica quale profilo. Il bool dice se si e' rinunciato.
 
-        for entry in roster:
+        Le ricerche vanno in parallelo, ma i risultati si raccolgono nell'ordine
+        del listone: la fase 2 assegna i contesi per confidenza, e a parita' di
+        confidenza deve vincere sempre lo stesso: un dataset che cambia a seconda
+        di quale thread ha finito prima non e' riproducibile, e il gate di
+        rilascio lo leggerebbe come contenuto nuovo a ogni esecuzione.
+        """
+        claims: dict[str, list[Claim]] = {}
+
+        def resolve(entry: RosterEntry):
             try:
-                profile = self._resolve_profile(entry, http, manual_map)
+                return entry, self._resolve_profile(entry, http, manual_map, state), None
             except HttpError as error:
+                return entry, None, error
+
+        with ThreadPoolExecutor(max_workers=config.MAX_WORKERS) as pool:
+            results = list(pool.map(resolve, roster))
+
+        failures = 0
+        for entry, profile, error in results:
+            if error is not None:
                 failures += 1
                 outcome.unresolved.append(entry)
-                # Una fonte che ci chiude la porta lo fa per tutti: dopo qualche
-                # tentativo si smette invece di insistere per 500 giocatori.
-                if failures >= 5 and not claims:
-                    outcome.failure = f"Transfermarkt irraggiungibile: {error}"
-                    outcome.unresolved = list(roster)
-                    return {}, True
                 continue
-
             if profile is None:
                 outcome.unresolved.append(entry)
                 continue
-
             slug, player_key, match = profile
             claims.setdefault(player_key, []).append((entry, match, slug))
+
+        # Una fonte che ci chiude la porta lo fa per tutti: se nessuno e' passato
+        # e i rifiuti sono piu' di una manciata, e' il sito che ci rifiuta, non
+        # cinquecento giocatori introvabili.
+        if failures >= 5 and not claims:
+            outcome.failure = f"Transfermarkt irraggiungibile: {failures} richieste fallite"
+            outcome.unresolved = list(roster)
+            return {}, True
 
         return claims, False
 
@@ -160,6 +261,7 @@ class TransfermarktProvider:
         entry: RosterEntry,
         http: HttpClient,
         manual_map: dict[str, dict[str, str]],
+        state: CascadeState,
     ) -> Optional[tuple[str, str, Match]]:
         """
         Cerca per cognome e lascia decidere al resolver.
@@ -183,12 +285,28 @@ class TransfermarktProvider:
         parsed = parse_listone_name(entry.name)
         query = parsed.surname or entry.name
 
-        html = http.fetch(
-            config.TRANSFERMARKT_SEARCH_URL,
-            params={"query": query},
-            user_agent=config.BROWSER_USER_AGENT,
-        )
-        candidates, slugs = self._parse_search(html)
+        # Un livello a monte puo' avere gia' identificato il giocatore per
+        # esteso. E' la differenza fra cercare "Martinez", che restituisce una
+        # pagina di Lautaro, Emiliano e Javi, e cercare "Josep Martinez", che
+        # restituisce il portiere che stiamo cercando: la ricerca mostra dieci
+        # risultati e chi non ci compare non e' recuperabile da nessuna euristica.
+        tentativi = [query, *_search_variants(entry.name, query)]
+        esteso = state.full_names.get(str(entry.id))
+        if esteso:
+            tentativi.insert(0, esteso)
+
+        candidates: list[Candidate] = []
+        slugs: dict[str, str] = {}
+        for tentativo in tentativi:
+            html = http.fetch(
+                config.TRANSFERMARKT_SEARCH_URL,
+                params={"query": tentativo},
+                user_agent=config.BROWSER_USER_AGENT,
+            )
+            candidates, slugs = self._parse_search(html)
+            if candidates:
+                break
+
         if not candidates:
             return None
 
@@ -241,6 +359,35 @@ class TransfermarktProvider:
             slugs[player_key] = slug
 
         return candidates, slugs
+
+    # --- LIVELLO 3: rendimento grezzo ---------------------------------------
+
+    def _fetch_performance(self, player_key: str, http: HttpClient) -> Optional[Performance]:
+        """
+        L'ultima spiaggia: gol, assist e minuti quando nessun altro li ha.
+
+        `/ceapi/performance-game/<id>` e' la stessa sorgente JSON che alimenta la
+        tabella "Rendimento" del sito, che il sito monta lato client: restituisce
+        tutte le partite di carriera. L'endpoint risponde solo alle richieste
+        marcate come AJAX — a una GET normale risponde 404, che sembrerebbe un
+        giocatore inesistente.
+        """
+        raw = http.fetch(
+            f"{config.TRANSFERMARKT_BASE}/ceapi/performance-game/{player_key}",
+            user_agent=config.BROWSER_USER_AGENT,
+            headers={
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "Referer": config.TRANSFERMARKT_BASE,
+            },
+        )
+        try:
+            payload = json.loads(raw)
+        except ValueError:
+            return None
+
+        matches = ((payload.get("data") or {}).get("performance")) or []
+        return _performance_from_matches(matches, int(config.UNDERSTAT_SEASON))
 
     # --- Storico infortuni ---------------------------------------------------
 
@@ -313,3 +460,61 @@ class TransfermarktProvider:
             # l'utente in asta vuole poter vedere *che* infortuni erano.
             history=history[:12],
         )
+
+
+def _performance_from_matches(
+    matches: Sequence[dict[str, Any]], reference_season: int
+) -> Optional[Performance]:
+    """
+    Aggrega le partite di una stagione in un rendimento. Puro: nessuna rete.
+
+    Due filtri che sembrano dettagli e non lo sono. Le gare con la nazionale
+    escono: un'asta di fantacalcio non le conta, e sommarle gonfierebbe presenze
+    e gol di chi ha giocato un Mondiale. E si tiene la stagione *di riferimento*,
+    non l'ultima in assoluto: a mercato in corso l'ultima e' quella appena
+    cominciata, su cui non si costruisce nulla.
+    """
+    played = [
+        m
+        for m in matches
+        if not (m.get("gameInformation") or {}).get("isNationalGame")
+        and ((m.get("statistics") or {}).get("generalStatistics") or {}).get(
+            "participationState"
+        )
+        == "played"
+    ]
+    if not played:
+        return None
+
+    seasons = {(m.get("gameInformation") or {}).get("seasonId") or 0 for m in played}
+    eligible = [s for s in seasons if s <= reference_season] or list(seasons)
+    chosen = max(eligible)
+    season_matches = [
+        m for m in played if (m.get("gameInformation") or {}).get("seasonId") == chosen
+    ]
+
+    def total(group: str, key: str) -> int:
+        return sum(
+            ((m.get("statistics") or {}).get(group) or {}).get(key) or 0
+            for m in season_matches
+        )
+
+    # Rosso diretto e secondo giallo compaiono come chiavi dedicate solo nelle
+    # partite in cui sono stati assegnati: si contano le partite, non un totale.
+    espulsioni = sum(
+        1
+        for m in season_matches
+        if ((m.get("statistics") or {}).get("cardStatistics") or {}).keys()
+        & {"redCard", "yellowRedCard"}
+    )
+
+    return Performance(
+        presenze=len(season_matches),
+        minuti=total("playingTimeStatistics", "playedMinutes"),
+        gol=total("goalStatistics", "goalsScoredTotal"),
+        assist=total("goalStatistics", "assists"),
+        ammonizioni=total("cardStatistics", "yellowCardNet"),
+        espulsioni=espulsioni,
+        # media_voto e fantamedia sono voti dei quotidiani italiani: Transfermarkt
+        # non li ha, e restano null per costruzione.
+    )

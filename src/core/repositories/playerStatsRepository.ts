@@ -38,7 +38,6 @@ export async function bulkUpsertStats(stats: PlayerStats[]): Promise<number> {
   try {
     for (const s of stats) {
       const extra = JSON.stringify({
-        ...(s.heatmap !== null ? { heatmap: s.heatmap } : {}),
         ...(s.injuries.history.length > 0 ? { injuryHistory: s.injuries.history } : {}),
       });
 

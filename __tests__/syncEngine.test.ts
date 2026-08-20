@@ -43,7 +43,6 @@ function remotePlayer(overrides: Partial<RemotePlayer> = {}): RemotePlayer {
       key_passes: 30,
     },
     injuries: { days: 12, matches: 2, risk: 0.04, history: [] },
-    heatmap: null,
     coverage: { understat: true, fantacalcio: true },
     ...overrides,
   };

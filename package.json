@@ -10,7 +10,8 @@
     "web": "expo start --web",
     "test": "jest",
     "typecheck": "tsc --noEmit",
-    "listone": "python scripts/xlsx_to_csv.py",
+    "listone": "python scripts/refresh_listone.py",
+    "listone:xlsx": "python scripts/xlsx_to_csv.py",
     "dataset": "python scripts/build_dataset.py",
     "dataset:test": "python -m unittest discover -s scripts -p \"test_*.py\""
   },

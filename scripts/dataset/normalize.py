@@ -175,9 +175,45 @@ TEAM_ALIASES = {
 }
 
 
+# Sigle e parole di forma societaria: non identificano il club, lo decorano.
+# Toglierle e' cio' che fa collassare "AC Monza" e "Monza" senza doverli
+# elencare a coppie.
+CLUB_FORM_TOKENS = {
+    "ac", "as", "us", "ss", "ssc", "fc", "cfc", "bc", "sc", "acf", "afc", "cd",
+    "sd", "ud", "rc", "calcio", "club", "football", "futbol", "fussball",
+    "sportiva", "societa", "associazione",
+}
+
+
+def _strip_club_form(normalized: str) -> str:
+    """"bologna fc 1909" -> "bologna". Anni compresi: sono date di fondazione."""
+    tokens = [
+        t for t in normalized.split()
+        if t not in CLUB_FORM_TOKENS and not t.isdigit()
+    ]
+    return " ".join(tokens) or normalized
+
+
 def normalize_team(raw: str) -> str:
+    """
+    Forma canonica del club.
+
+    La tabella degli alias da sola non basta, ed e' un problema che si presenta
+    in silenzio: mancava "ac monza", quindi il portiere del Monza restava senza
+    statistiche pur avendo su Transfermarkt un candidato con cognome, ruolo e
+    squadra giusti. Nessun errore, solo un match in meno — e la tabella va
+    riscritta a ogni promozione.
+
+    Per questo la sigla societaria si toglie per struttura invece che per
+    elenco. Gli alias restano per cio' che la struttura non puo' dedurre:
+    "internazionale" -> "inter", "hellas verona" -> "verona".
+    """
     normalized = normalize_text(raw)
-    return TEAM_ALIASES.get(normalized, normalized)
+    if normalized in TEAM_ALIASES:
+        return TEAM_ALIASES[normalized]
+
+    core = _strip_club_form(normalized)
+    return TEAM_ALIASES.get(core, core)
 
 
 def normalize_teams(raw: str) -> set[str]:

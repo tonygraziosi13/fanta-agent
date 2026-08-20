@@ -1,0 +1,217 @@
+# Rilascio automatico del dataset (US19-T3).
+#
+# Rigenera dataset/players.json dalle fonti esterne e lo pubblica committandolo
+# su main, da cui GitHub Pages lo serve all'app. Il commit e' il rilascio: qui
+# cambia solo chi lo fa.
+#
+# Fra la generazione e il commit c'e' un gate (scripts/check_release.py), e non
+# e' un dettaglio procedurale. `build_dataset.py` ritorna 0 anche se tutte le
+# fonti falliscono — giusto in locale, dove un umano legge il report; letale a
+# monte di un commit automatico, che pubblicherebbe un dataset a copertura zero
+# sopra uno buono. Il gate ha tre uscite:
+#
+#   publish     versione nuova, nessuna fonte in regressione -> commit
+#   unchanged   hash identico -> nessun commit (cambierebbe solo generated_at)
+#   regression  una fonte e' caduta -> job rosso, il dataset online resta
+#
+# Un job rosso con "RILASCIO BLOCCATO" e' il gate che fa il suo lavoro, non un
+# guasto del workflow.
+
+name: Rilascio dataset
+
+on:
+  schedule:
+    # Lunedi' alle 04:00 UTC. La cadenza e' una riga: durante il mercato ha
+    # senso stringerla, a stagione ferma allargarla.
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Fonti separate da virgola (vuoto = tutte)"
+        required: false
+        default: ""
+      limit:
+        description: "Usa solo i primi N giocatori del listone (prova rapida)"
+        required: false
+        default: ""
+      no_cache:
+        description: "Ignora la cache HTTP su disco"
+        type: boolean
+        required: false
+        default: false
+
+# Due generazioni sovrapposte committerebbero lo stesso file: si accodano.
+# `cancel-in-progress: false` perche' interrompere a meta' butta via mezz'ora
+# di richieste gia' fatte alle fonti.
+concurrency:
+  group: dataset-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Metti da parte il dataset online
+        # La baseline del gate. Copiarla adesso evita di dover ripescare la
+        # versione precedente da git dopo che la generazione ha sovrascritto i
+        # file, e rende lo script identico a come lo si lancia in locale.
+        run: cp -r dataset "$RUNNER_TEMP/baseline"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa le dipendenze della pipeline
+        run: pip install -r scripts/requirements.txt
+
+      - name: Installa il browser per il download del listone
+        # Playwright scarica il proprio Chromium a parte: `pip install` non
+        # basta. `--with-deps` aggiunge le librerie di sistema che su un runner
+        # nudo non ci sono.
+        #
+        # `continue-on-error` perche' senza browser il listone si aggiorna
+        # comunque dalla pagina pubblica: sarebbe assurdo far fallire un
+        # rilascio per la mancanza del percorso *migliore*.
+        continue-on-error: true
+        run: playwright install --with-deps chromium
+
+      - name: Test della pipeline
+        # Girano in millisecondi e senza rete. Se il gate e' rotto, meglio
+        # saperlo prima di mezz'ora di scraping.
+        run: python -m unittest discover -s scripts -p "test_*.py"
+
+      - name: Cache delle risposte HTTP
+        # Transfermarkt costa ~2 richieste per giocatore a un secondo l'una:
+        # senza cache calda sono ~20 minuti solo per lui. La chiave cambia a
+        # ogni run per forzare il salvataggio, il prefisso ripesca l'ultima.
+        #
+        # Qui vive anche `levels.json`, lo stato del delta di esecuzione: se la
+        # cache si perde il peggio che succede e' una rigenerazione completa,
+        # che e' il degrado giusto per una struttura di comodo.
+        uses: actions/cache@v4
+        with:
+          path: .cache/dataset
+          key: dataset-http-${{ github.run_id }}
+          restore-keys: dataset-http-
+
+      - name: Aggiorna il listone dalle quotazioni ufficiali
+        # Va prima della generazione, e non e' un dettaglio d'ordine: la
+        # pipeline costruisce le metriche attorno all'anagrafica di questo CSV.
+        # Rigenerare le statistiche su un listone fermo produce un dataset
+        # fermo per quanto fresche siano le fonti — che e' esattamente il buco
+        # che questo passo chiude.
+        #
+        # Se le quotazioni non rispondono non si fallisce: il listone in repo
+        # resta valido e la generazione prosegue con quello. E' una fonte in
+        # meno per un giro, non un rilascio da buttare.
+        #
+        # Le credenziali abilitano il download autenticato dell'.xlsx, che ha il
+        # tracciato record completo e i fogli "Tutti"/"Ceduti". Se i due secret
+        # non esistono — o se fantacalcio.it rifiuta l'IP del runner, che e' uno
+        # scenario concreto su un datacenter — lo script lo dice e ricade sullo
+        # scraping della pagina pubblica, che non richiede login. E' la ragione
+        # per cui questo passo non ha bisogno che i secret siano configurati.
+        continue-on-error: true
+        env:
+          FANTACALCIO_USER: ${{ secrets.FANTACALCIO_USER }}
+          FANTACALCIO_PASS: ${{ secrets.FANTACALCIO_PASS }}
+        run: python scripts/refresh_listone.py | tee "$RUNNER_TEMP/listone.txt"
+
+      - name: Genera il dataset
+        # Gli input passano da variabili d'ambiente e non per interpolazione
+        # diretta nello script: interpolati finirebbero nel testo del comando.
+        env:
+          ONLY: ${{ inputs.only }}
+          LIMIT: ${{ inputs.limit }}
+          NO_CACHE: ${{ inputs.no_cache }}
+        run: |
+          set -o pipefail
+          args=()
+          if [ -n "$ONLY" ]; then args+=(--only "$ONLY"); fi
+          if [ -n "$LIMIT" ]; then args+=(--limit "$LIMIT"); fi
+          if [ "$NO_CACHE" = "true" ]; then args+=(--no-cache); fi
+          python scripts/build_dataset.py "${args[@]}" | tee "$RUNNER_TEMP/report.txt"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Verifica il contratto con l'app
+        # datasetContract.test.ts confronta il formato appena scritto da Python
+        # con quello che datasetSchema.ts accetta. Esisteva gia': farlo girare
+        # qui sposta il controllo da "dopo, sul telefono" a "adesso, prima di
+        # pubblicare".
+        run: |
+          npm ci
+          npx jest datasetContract
+
+      - name: Gate di rilascio
+        id: gate
+        run: python scripts/check_release.py "$RUNNER_TEMP/baseline"
+
+      - name: Report di copertura nel riepilogo
+        # Anche quando non si pubblica: e' il sostituto dell'occhio umano sul
+        # terminale, ed e' l'unico modo di accorgersi di una fonte che si sta
+        # degradando lentamente senza ancora far scattare il gate.
+        if: always()
+        run: |
+          {
+            echo "## Listone"
+            echo '```'
+            cat "$RUNNER_TEMP/listone.txt" 2>/dev/null || echo "(quotazioni non aggiornate in questo giro)"
+            echo '```'
+            echo "## Report di copertura"
+            echo '```'
+            tail -n 60 "$RUNNER_TEMP/report.txt" || echo "(nessun report: la generazione non e' arrivata in fondo)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Ripristina il dataset invariato
+        # `generated_at` e' fuori dall'hash ma dentro i file: senza questo
+        # ripristino l'albero resterebbe sporco di una differenza che non
+        # significa nulla.
+        if: steps.gate.outputs.publish != 'true'
+        run: git checkout -- dataset assets/data/listone.csv
+
+      - name: Pubblica
+        # Listone e dataset viaggiano nello stesso commit di proposito: il CSV
+        # e' il fallback offline dell'app e deve condividere gli `Id` col
+        # dataset. Committarli separatamente aprirebbe una finestra in cui un
+        # utente al primo avvio senza rete vede un listone diverso da chi
+        # sincronizza.
+        if: steps.gate.outputs.publish == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dataset assets/data/listone.csv
+          git commit -m "Dataset ${{ steps.gate.outputs.version }} (${{ steps.gate.outputs.players }} giocatori)"
+          git push
+
+      - name: Verifica che Pages serva la versione nuova
+        # L'unica prova end-to-end che il rilascio sia arrivato dove l'app lo
+        # cerca. L'URL si legge da app.json: se qualcuno lo cambia, questo
+        # passo segue senza che nessuno se ne debba ricordare.
+        if: steps.gate.outputs.publish == 'true'
+        run: |
+          url=$(python -c "import json;print(json.load(open('app.json'))['expo']['extra']['datasetUrl'])")
+          atteso="${{ steps.gate.outputs.version }}"
+          echo "Attendo $atteso su $url"
+          for tentativo in $(seq 1 10); do
+            servita=$(curl -fsSL "$url" | python -c "import json,sys;print(json.load(sys.stdin).get('version',''))" || echo "")
+            if [ "$servita" = "$atteso" ]; then
+              echo "Pages serve $servita dopo $tentativo tentativi."
+              exit 0
+            fi
+            echo "  tentativo $tentativo: $servita"
+            sleep 30
+          done
+          echo "Pages serve ancora una versione vecchia dopo 5 minuti." >&2
+          exit 1

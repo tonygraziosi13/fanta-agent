@@ -12,6 +12,11 @@ keys/
 # Dipendenze
 node_modules/
 
+# Bytecode Python: rigenerato a ogni esecuzione della pipeline, e legato alla
+# versione dell'interprete di chi l'ha lanciata.
+__pycache__/
+*.pyc
+
 # Expo
 .expo/
 dist/
@@ -39,6 +44,10 @@ coverage/
 # E' un artefatto generato ma deterministico, ed e' l'unica fonte dati
 # dell'app al primo avvio: senza, il bootstrap (US7) fallisce.
 #
+# Uscita delle esecuzioni parziali (--only / --limit): e' una prova, non un
+# rilascio, e non deve finire nel repo ne' essere scambiata per il dataset vero.
+dataset/preview/
+
 # NOTA: anche dataset/ e' versionato di proposito, ma per un'altra ragione:
-# non e' un asset dell'app, e' cio' che viene *pubblicato*. L'app lo scarica
-# da raw.githubusercontent, quindi il commit e' il rilascio (US19-4).
+# non e' un asset dell'app, e' cio' che viene *pubblicato*. GitHub Pages serve
+# la radice di main, quindi il commit e' il rilascio (US19-4).

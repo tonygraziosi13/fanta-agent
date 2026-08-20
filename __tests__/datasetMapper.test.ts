@@ -40,7 +40,6 @@ function player(overrides: Partial<RemotePlayer> = {}): RemotePlayer {
       key_passes: null,
     },
     injuries: { days: null, matches: null, risk: null, history: [] },
-    heatmap: null,
     coverage: {},
     ...overrides,
   };
@@ -78,27 +77,6 @@ describe('datasetMapper', () => {
     expect(skipped).toHaveLength(3);
   });
 
-  it('rifiuta una heatmap incoerente invece di mandare la UI fuori indice', () => {
-    const { stats } = mapDataset(
-      payload([
-        player({
-          coverage: { sofascore: true },
-          heatmap: { rows: 8, cols: 6, cells: [0.1, 0.2] },
-        }),
-      ])
-    );
-
-    expect(stats[0]?.heatmap).toBeNull();
-  });
-
-  it('accetta una heatmap completa', () => {
-    const cells = Array.from({ length: 48 }, () => 0.5);
-    const { stats } = mapDataset(
-      payload([player({ coverage: { sofascore: true }, heatmap: { rows: 8, cols: 6, cells } })])
-    );
-
-    expect(stats[0]?.heatmap?.cells).toHaveLength(48);
-  });
 });
 
 describe('datasetSchema', () => {
