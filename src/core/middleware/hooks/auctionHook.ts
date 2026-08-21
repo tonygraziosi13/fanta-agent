@@ -85,15 +85,14 @@ const pickStage: Stage<PickAction> = {
       return `${opponent.nome} ha gia' completato il reparto ${action.ruolo}.`;
     }
 
-    // --- Il vincolo che conta, e non e' "ha abbastanza crediti" ---
-    // `offertaMassima` tiene un credito per ogni slot ancora vuoto: con 100
-    // crediti e 10 posti da riempire il massimo su un singolo giocatore e' 91,
-    // perche' gli altri nove vanno comunque coperti. Riusarla qui — invece di
-    // confrontare col totale — significa che UI, validazione e agente applicano
-    // la stessa regola, definita in un posto solo.
+    // Si passa da `offertaMassima` e non si confronta direttamente con i
+    // crediti: e' la stessa funzione che alimenta la colonna "max" del tavolo e
+    // la fila dei contendenti. Se un giorno il tetto tornasse a dipendere dagli
+    // slot da riempire — e' una regola di lega — cambierebbe in un posto solo,
+    // e schermata e motore resterebbero d'accordo per costruzione.
     const massimo = offertaMassima(opponent);
     if (action.costo > massimo) {
-      return `${opponent.nome} puo' offrire al massimo ${massimo} crediti (ne ha ${opponent.creditiResidui}, con ${slotTotali(opponent.slotLiberi)} slot da riempire).`;
+      return `${opponent.nome} ha solo ${massimo} crediti: non puo' arrivare a ${action.costo}.`;
     }
 
     return true;
@@ -124,10 +123,6 @@ const pickStage: Stage<PickAction> = {
     await saveOpponentState(opponent);
   },
 };
-
-function slotTotali(slot: Record<ClassicRole, number>): number {
-  return slot.P + slot.D + slot.C + slot.A;
-}
 
 export const auctionPipeline = createPipeline<PickAction>([pickStage]);
 

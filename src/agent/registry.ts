@@ -6,6 +6,7 @@ import { importOpponentsTool } from './tools/importOpponents';
 import { getPlayerDetailTool } from './tools/getPlayerDetail';
 import { getWatchlistTool } from './tools/getWatchlist';
 import { searchPlayersTool } from './tools/searchPlayers';
+import { suggestWatchlistTool } from './tools/suggestWatchlist';
 import { topDefendersModifierTool } from './tools/topDefendersModifier';
 
 /**
@@ -23,6 +24,7 @@ export const AGENT_TOOLS: ReadonlyArray<AgentTool<any, any>> = [
   getConfigurationTool,
   getOpponentsTool,
   topDefendersModifierTool,
+  suggestWatchlistTool,
   assignPlayerTool,
   importOpponentsTool,
 ];

@@ -93,14 +93,26 @@ export function slotRimanenti(opponent: Opponent): number {
 /**
  * Il massimo che quella squadra puo' offrire per un giocatore.
  *
- * Non e' il totale dei crediti: ogni slot ancora da riempire va coperto almeno
- * da un credito, altrimenti la rosa resta incompleta e in molte leghe non e'
- * ammesso. E' il numero che dice se un avversario puo' davvero rilanciare, e
- * calcolarlo qui — non nel modello — significa che UI e agente rispondono la
- * stessa cosa.
+ * Sono i crediti che le restano, e basta: chi ne ha 500 puo' spenderli tutti su
+ * un nome solo.
+ *
+ * --- Perche' non riserva piu' un credito per slot ---
+ * La versione precedente sottraeva uno per ogni casella ancora vuota (500
+ * crediti e 25 slot davano 476), sul presupposto che la rosa vada comunque
+ * completata. E' una **regola di lega**, non un'invariante: dove completare non
+ * e' obbligatorio, quella riserva mostrava un tetto che non esiste e — peggio —
+ * faceva rifiutare al motore offerte perfettamente legittime.
+ *
+ * Fra i due errori possibili si e' scelto il meno grave: mostrare un tetto piu'
+ * alto del reale lascia decidere all'utente, mostrarne uno piu' basso gli
+ * impedisce di registrare quel che e' successo davvero al tavolo.
+ *
+ * A rosa completa resta zero: non c'e' dove metterlo, a qualunque cifra.
+ *
+ * Vive qui e non in un componente perche' UI, validazione della transazione e
+ * agente devono rispondere la stessa cosa, definita una volta sola.
  */
 export function offertaMassima(opponent: Opponent): number {
-  const slot = slotRimanenti(opponent);
-  if (slot <= 0) return 0;
-  return Math.max(opponent.creditiResidui - (slot - 1), 0);
+  if (slotRimanenti(opponent) <= 0) return 0;
+  return Math.max(opponent.creditiResidui, 0);
 }

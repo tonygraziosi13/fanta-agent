@@ -175,9 +175,65 @@ Attenzione all'assunzione sbagliata più facile: la tab `index` **non** è il li
 - `app/(tabs)/index.tsx` — **Home: le configurazioni d'asta** (attiva / modifica /
   elimina). È la prima tab perché i parametri d'asta sono il contesto di tutto il resto.
 - `app/(tabs)/listone.tsx` — il listone.
-- `app/(tabs)/watchlist.tsx` — watchlist della configurazione attiva. Il badge sulla tab
-  (in `app/(tabs)/_layout.tsx`) si sottoscrive al solo conteggio, così un'assegnazione
-  aggiorna il numero senza ri-renderizzare le schermate.
+- `app/(tabs)/watchlist.tsx` — watchlist della configurazione attiva, con
+  **auto-pulizia**: chi è già stato aggiudicato in asta sparisce dalla vista. Sparisce
+  dalla *vista* e non dai dati — l'assegnazione resta, la categoria scelta non si perde, e
+  se l'aggiudicazione viene annullata il giocatore torna dov'era. Una riga in fondo dice
+  quanti sono nascosti (senza, la lista sembrerebbe assottigliarsi da sola) ed è anche
+  l'interruttore per rivederli, con accanto chi se li è presi. Il filtro è
+  `partizionaAggiudicati` in `state/auctionSelectors.ts`, puro e testato; `selectors.ts`
+  non è stato toccato. Due stati vuoti distinti: "non hai ancora scelto nessuno" manda sul
+  Listone, "sono andati tutti" no — sarebbe rifare un lavoro già fatto.
+
+  Porta anche l'**allarme economico** (`domain/budgetAlert.ts`), che compare solo quando
+  c'è un deficit reale: un avviso permanente sarebbe una spia sempre accesa, e quando
+  serve davvero non verrebbe notata.
+
+  - **L'inflazione si misura al tavolo, non si assume.** All'asta i giocatori vanno via
+    sopra il listino, e di quanto dipende dalla lega. Il dato c'è già: i prezzi
+    effettivamente pagati in *questa* asta (`opponents[].rosa[].prezzo`), che nessun
+    listino può conoscere. Σprezzo / Σquotazione dà il moltiplicatore. Sotto cinque
+    acquisti è rumore — basta un portiere pagato uno — e si ripiega sulla quotazione nuda
+    dichiarandolo.
+  - **Il fabbisogno conta solo quanti target stanno negli slot liberi**, non tutta la
+    watchlist: ci si mettono venti nomi per sceglierne otto, e sommarli tutti darebbe un
+    allarme sempre acceso. Si prendono i **più cari** fino a coprire il reparto, perché è
+    il caso peggiore ed è quello su cui vale la pena avvisare.
+  - **La similarità delle alternative passa dal FVM**, non dalle statistiche avanzate:
+    è la stima che il mercato stesso dà del rendimento, sta già in RAM, e non costa
+    cinquecento letture da SQLite nel momento peggiore. E non si cercano FVM *simili* —
+    FVM e quotazione vanno di pari passo, quindi "stesso valore, molto meno caro" è quasi
+    sempre vuoto: si cerca il massimo rendimento entro il tetto di spesa, che è la domanda
+    vera. Sotto metà del valore del target non si propone: sarebbe un ripiego travestito
+    da soluzione.
+
+  E porta i **suggerimenti di riempimento** (`domain/watchlistFill.ts`), che compaiono
+  **solo sulle categorie ancora vuote**: è l'unico punto in cui proporre dei nomi non è
+  un'interruzione — l'utente ha appena dichiarato un'intenzione e non l'ha ancora
+  riempita. Sopra una lista già scritta sarebbe un consiglio non richiesto sopra un lavoro
+  fatto, ed è anche il motivo per cui le proposte si calcolano lì e basta: farlo per tutte
+  costerebbe un ordinamento di cinquecento nomi per categoria che nessuno guarda.
+
+  - **La scala è il budget medio per slot rimanente**, non la quotazione assoluta: con 300
+    crediti e venti caselle vuote si ragiona su quindici a testa, e un "must-have" da
+    ottanta e una "scommessa" da tre sono due letture della stessa cifra. Da lì le fasce
+    (punta 1.5×–5×, equilibrio 0.6×–1.5×, scommessa 1–0.5×).
+  - **La strategia si deduce dal nome per parola chiave**, non per uguaglianza: rinominare
+    "Scommesse" in "Scommesse low cost" non rompe il riconoscimento. Un nome inventato
+    ricade sull'equilibrio, dichiarandolo — interpretare "Titolari da 6 in pagella" è un
+    lavoro di lingua che serve un LLM, e un comportamento prevedibile vale più che
+    indovinare.
+  - **"Da evitare" non si riempie mai.** È una lista negativa: popolarla automaticamente
+    vorrebbe dire suggerire di scartare giocatori mai valutati, l'esatto contrario di quel
+    che quella categoria serve a ricordare.
+  - **Si propone, non si aggiunge**, e non c'è un "aggiungi tutti": accettare cinque nomi
+    in blocco è il gesto che si fa senza leggerli. Ogni riga passa dalla stessa
+    `assignPlayer` del Listone, così un'aggiunta suggerita e una manuale restano la stessa
+    operazione. Il tool `suggest_watchlist` è di sola lettura per la stessa ragione: per
+    scrivere c'è già `assign_player`.
+
+  Il badge sulla tab (in `app/(tabs)/_layout.tsx`) si sottoscrive al solo conteggio, così
+  un'assegnazione aggiorna il numero senza ri-renderizzare le schermate.
 - `app/(tabs)/asta.tsx` — **Asta Live**: registra le aggiudicazioni durante l'asta e
   mostra chi può ancora rilanciare. È la schermata che rende raggiungibile dal bundle il
   motore di transazione, l'Indice Modificatore e `coaches.json` — prima erano scaffolding
@@ -649,10 +705,14 @@ vocabolario avrebbe dato due sistemi da tenere allineati a mano.
 
 Due decisioni non deducibili dal codice:
 
-- **Il vincolo non è "ha abbastanza crediti", è `offertaMassima`.** Con 100 crediti e 10
-  slot da riempire il massimo su un singolo giocatore è 91: gli altri nove posti vanno
-  comunque coperti. La funzione era già in `domain/opponent.ts`; riusarla qui significa
-  che UI, validazione e agente applicano la stessa regola, definita una volta sola.
+- **Il tetto passa da `offertaMassima`, che sono i crediti residui.** Una versione
+  precedente ne riservava uno per ogni casella ancora vuota (500 crediti e 25 slot davano
+  476), sul presupposto che la rosa vada completata: è una **regola di lega**, non
+  un'invariante, e dove completare non è obbligatorio mostrava un tetto inesistente e
+  faceva rifiutare al motore offerte legittime. Fra i due errori si è scelto il meno
+  grave — un tetto più alto del reale lascia decidere all'utente, uno più basso gli
+  impedisce di registrare quel che è successo al tavolo. Se un giorno servisse la riserva,
+  torna in `domain/opponent.ts` e basta: UI, validazione e agente ci passano tutti.
 - **La pipeline non solleva, e non è stata piegata.** La specifica chiedeva un'eccezione
   bloccante, ma `dispatch` restituisce `{ ok, reason }` e `executeTool` ha la regola
   opposta — un errore restituito come dato permette al modello di correggersi al turno
@@ -805,7 +865,8 @@ Prima di scrivere un client LLM reale, consulta la skill `claude-api`.
 
 I test coprono **solo logica pura** — nessuna dipendenza nativa, nessun SQLite. Le suite
 in `__tests__/` rispecchiano i moduli puri corrispondenti: `listoneMapper`, `selectors`,
-`pipeline`, `configuration`, `datasetMapper`, `syncEngine`, `metrics`.
+`pipeline`, `configuration`, `datasetMapper`, `syncEngine`, `metrics`, `modifierIndex`,
+`auctionTransaction`, `statoAsta`, `budgetAlert`, `watchlistFill`.
 
 `datasetContract.test.ts` è l'unico che legge dal disco: verifica sui file veri in
 `dataset/` che il formato scritto da `scripts/build_dataset.py` sia quello che

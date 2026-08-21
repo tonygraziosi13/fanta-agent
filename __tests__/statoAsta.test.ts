@@ -182,19 +182,22 @@ describe('modello degli avversari', () => {
     expect(slotRimanenti(rowToOpponent(row()))).toBe(25);
   });
 
-  it('l’offerta massima tiene un credito per ogni slot ancora da riempire', () => {
+  it('l’offerta massima sono i crediti che restano', () => {
     /**
-     * È il numero che dice se un avversario può davvero rilanciare. Non è il
-     * totale dei crediti: con 500 crediti e 25 slot da riempire, il massimo su
-     * un singolo giocatore è 476, perché gli altri 24 posti vanno coperti.
+     * Chi ha 500 crediti può spenderli tutti su un nome solo. La versione
+     * precedente ne riservava uno per ogni casella vuota (476 con 25 slot), ma
+     * quella è una **regola di lega**: dove completare la rosa non è
+     * obbligatorio mostrava un tetto inesistente e faceva rifiutare al motore
+     * offerte legittime.
      */
-    expect(offertaMassima(rowToOpponent(row()))).toBe(476);
+    expect(offertaMassima(rowToOpponent(row()))).toBe(500);
   });
 
-  it('con un solo slot libero può spendere tutto', () => {
+  it('non dipende da quanti slot restano', () => {
+    /** Un solo posto libero o venticinque: il tetto è lo stesso. */
     const uno = rowToOpponent(row({ slot_p: 1, slot_d: 0, slot_c: 0, slot_a: 0 }));
 
-    expect(offertaMassima(uno)).toBe(500);
+    expect(offertaMassima(uno)).toBe(offertaMassima(rowToOpponent(row())));
   });
 
   it('a rosa completa non può offrire niente', () => {
@@ -203,14 +206,15 @@ describe('modello degli avversari', () => {
     expect(offertaMassima(pieno)).toBe(0);
   });
 
-  it('non produce un’offerta negativa quando i crediti non bastano', () => {
+  it('non produce un’offerta negativa', () => {
     /**
-     * Succede in leghe che permettono di scendere sotto: un numero negativo
-     * verrebbe letto dall'agente come un rilancio possibile all'incontrario.
+     * Un saldo negativo è possibile nelle leghe che lasciano sforare, o dopo un
+     * dato corrotto: propagarlo darebbe all'agente un numero che leggerebbe
+     * come un rilancio possibile all'incontrario.
      */
-    const spiantato = rowToOpponent(row({ crediti: 2, slot_p: 3, slot_d: 3, slot_c: 0, slot_a: 0 }));
+    const indebitato = rowToOpponent(row({ crediti: -12 }));
 
-    expect(offertaMassima(spiantato)).toBe(0);
+    expect(offertaMassima(indebitato)).toBe(0);
   });
 });
 

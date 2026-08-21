@@ -1,6 +1,7 @@
 import type { Opponent } from '@/domain/opponent';
 import type { Player } from '@/domain/player';
 import type { ClassicRole } from '@/domain/roles';
+import type { CategoryGroup } from './selectors';
 
 /**
  * Selettori dell'asta: puri, senza React e senza SQLite.
@@ -73,4 +74,46 @@ export function budgetMedioPerSlot(opponent: Opponent): number | null {
     opponent.slotLiberi.P + opponent.slotLiberi.D + opponent.slotLiberi.C + opponent.slotLiberi.A;
   if (slot <= 0) return null;
   return opponent.creditiResidui / slot;
+}
+
+/**
+ * Toglie dalla watchlist chi e' gia' stato aggiudicato.
+ *
+ * --- Perche' serve ---
+ * Durante un'asta la watchlist si scorre per decidere il prossimo obiettivo. Un
+ * nome gia' venduto a qualcun altro e' rumore nel percorso piu' caldo: costa
+ * un'occhiata e mezza decisione, e in asta si pagano entrambe.
+ *
+ * --- Nasconde, non cancella ---
+ * L'assegnazione resta in SQLite. Cancellarla butterebbe via la categoria che
+ * l'utente ha scelto — e siccome un'aggiudicazione si puo' annullare, quel
+ * giocatore potrebbe tornare disponibile un minuto dopo, senza piu' sapere dove
+ * l'avevi messo.
+ *
+ * Restituisce anche gli esclusi: la schermata deve poter dire *quanti* sono
+ * spariti, o la watchlist sembrerebbe assottigliarsi da sola.
+ */
+export function partizionaAggiudicati(
+  groups: ReadonlyArray<CategoryGroup>,
+  presi: ReadonlySet<number>
+): { visibili: CategoryGroup[]; aggiudicati: Player[] } {
+  // Nessuno preso: si restituiscono i gruppi originali senza ricostruirli, cosi'
+  // i riferimenti restano stabili e `memo` sulle righe non si sveglia per niente.
+  if (presi.size === 0) {
+    return { visibili: [...groups], aggiudicati: [] };
+  }
+
+  const aggiudicati: Player[] = [];
+  const visibili = groups.map((group) => {
+    const liberi: Player[] = [];
+    for (const player of group.players) {
+      if (presi.has(player.id)) aggiudicati.push(player);
+      else liberi.push(player);
+    }
+    // `count` segue i visibili: la pastiglia accanto al nome della categoria
+    // deve contare quel che si vede, o il numero e le righe si smentiscono.
+    return { category: group.category, players: liberi, count: liberi.length };
+  });
+
+  return { visibili, aggiudicati };
 }

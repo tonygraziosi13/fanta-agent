@@ -4,10 +4,12 @@ import type { Opponent } from '@/domain/opponent';
 import type { Player } from '@/domain/player';
 import {
   budgetMedioPerSlot,
+  partizionaAggiudicati,
   presiDaQualcuno,
   proprietarioDi,
   selectSvincolati,
 } from '@/state/auctionSelectors';
+import type { CategoryGroup } from '@/state/selectors';
 import { useOpponentsStore } from '@/state/useOpponentsStore';
 import { usePlayersStore } from '@/state/usePlayersStore';
 
@@ -115,19 +117,20 @@ describe('validazione della transazione', () => {
     expect(esito.reason).toContain('reparto D');
   });
 
-  it('rifiuta oltre l’offerta massima, non oltre i crediti', () => {
+  it('rifiuta solo oltre i crediti disponibili', () => {
     /**
-     * Il vincolo che conta. Con 100 crediti e 10 slot da riempire il massimo su
-     * un giocatore è 91, non 100: gli altri nove posti vanno comunque coperti.
-     * Confrontare col totale lascerebbe passare acquisti che rendono la rosa
-     * incompletabile.
+     * Con 100 crediti si può arrivare a 100, anche restando con nove caselle
+     * vuote: completare la rosa è una regola di lega, non un'invariante che il
+     * motore debba imporre. Quel che il motore deve garantire è che la
+     * schermata e la validazione dicano la stessa cosa — entrambe passano da
+     * `offertaMassima`.
      */
     const opp = avversario({ creditiResidui: 100, slotLiberi: { P: 1, D: 3, C: 3, A: 3 } });
     prepara([giocatore()], [opp]);
 
-    expect(offertaMassima(opp)).toBe(91);
-    expect(registraAcquisto(1, 100, 10, 'D').ok).toBe(false);
-    expect(registraAcquisto(1, 91, 10, 'D').ok).toBe(true);
+    expect(offertaMassima(opp)).toBe(100);
+    expect(registraAcquisto(1, 101, 10, 'D').ok).toBe(false);
+    expect(registraAcquisto(1, 100, 10, 'D').ok).toBe(true);
   });
 
   it('rifiuta un costo negativo o non numerico', () => {
@@ -289,5 +292,76 @@ describe('selettori', () => {
     const pieno = avversario({ slotLiberi: { P: 0, D: 0, C: 0, A: 0 } });
 
     expect(budgetMedioPerSlot(pieno)).toBeNull();
+  });
+});
+
+describe('auto-pulizia della watchlist', () => {
+  /**
+   * Chi è già stato venduto sparisce dalla vista della watchlist. È il percorso
+   * più caldo dell'app: durante un'asta la si scorre per scegliere il prossimo
+   * obiettivo, e un nome non più acquistabile costa un'occhiata e mezza
+   * decisione.
+   */
+  function gruppo(nome: string, players: Player[]): CategoryGroup {
+    return {
+      category: { id: 1, name: nome, color: '#22C55E', sort_order: 0, is_default: true },
+      players,
+      count: players.length,
+    };
+  }
+
+  it('toglie dalla vista chi è già stato aggiudicato', () => {
+    const gruppi = [gruppo('Must-Have', [giocatore({ id: 1 }), giocatore({ id: 2 })])];
+
+    const { visibili, aggiudicati } = partizionaAggiudicati(gruppi, new Set([2]));
+
+    expect(visibili[0]!.players.map((p) => p.id)).toEqual([1]);
+    expect(aggiudicati.map((p) => p.id)).toEqual([2]);
+  });
+
+  it('il conteggio della categoria segue quel che si vede', () => {
+    /** Altrimenti la pastiglia direbbe 2 accanto a una riga sola, e il numero
+     * e l'elenco si smentirebbero a vicenda. */
+    const gruppi = [gruppo('Must-Have', [giocatore({ id: 1 }), giocatore({ id: 2 })])];
+
+    const { visibili } = partizionaAggiudicati(gruppi, new Set([2]));
+
+    expect(visibili[0]!.count).toBe(1);
+  });
+
+  it('senza nessun aggiudicato non ricostruisce i gruppi', () => {
+    /** I riferimenti restano stabili, così il `memo` sulle righe non si sveglia
+     * per niente: è il percorso normale prima che l'asta cominci. */
+    const gruppi = [gruppo('Must-Have', [giocatore({ id: 1 })])];
+
+    const { visibili, aggiudicati } = partizionaAggiudicati(gruppi, new Set());
+
+    expect(visibili[0]).toBe(gruppi[0]);
+    expect(aggiudicati).toEqual([]);
+  });
+
+  it('una categoria svuotata resta, con zero', () => {
+    /** Far sparire la sezione nasconderebbe all'utente che la categoria esiste
+     * ancora — la stessa ragione per cui `selectGroupedWatchlist` restituisce
+     * anche le categorie vuote. */
+    const gruppi = [gruppo('Must-Have', [giocatore({ id: 1 })])];
+
+    const { visibili } = partizionaAggiudicati(gruppi, new Set([1]));
+
+    expect(visibili).toHaveLength(1);
+    expect(visibili[0]!.count).toBe(0);
+  });
+
+  it('l’assegnazione non viene toccata: si nasconde, non si cancella', () => {
+    /**
+     * Un'aggiudicazione si può annullare, e il giocatore deve tornare nella
+     * categoria che gli avevi dato. I gruppi in ingresso restano intatti.
+     */
+    const originali = [gruppo('Must-Have', [giocatore({ id: 1 }), giocatore({ id: 2 })])];
+
+    partizionaAggiudicati(originali, new Set([1, 2]));
+
+    expect(originali[0]!.players).toHaveLength(2);
+    expect(originali[0]!.count).toBe(2);
   });
 });
