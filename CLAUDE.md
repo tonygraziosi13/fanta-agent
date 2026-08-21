@@ -37,6 +37,8 @@ npm run typecheck      # tsc --noEmit, strict + noUncheckedIndexedAccess
 npm run listone        # aggiorna assets/data/listone.csv (login se le credenziali ci sono)
 npm run listone:xlsx   # riserva offline: rigenera il CSV da un .xlsx scaricato a mano
 npm run dataset        # rigenera dataset/players.json dalle fonti esterne (lento)
+npm run coaches        # rigenera dataset/coaches.json (allenatori e profilo tattico)
+npm run asta           # rigenera scripts/dataset/stato_asta.json (partecipanti della lega)
 npm run dataset:test   # unittest della pipeline Python (istantanei, senza rete)
 
 python scripts/check_release.py <baseline>   # gate di rilascio: pubblicare o no
@@ -176,6 +178,10 @@ Attenzione all'assunzione sbagliata più facile: la tab `index` **non** è il li
 - `app/(tabs)/watchlist.tsx` — watchlist della configurazione attiva. Il badge sulla tab
   (in `app/(tabs)/_layout.tsx`) si sottoscrive al solo conteggio, così un'assegnazione
   aggiorna il numero senza ri-renderizzare le schermate.
+- `app/(tabs)/asta.tsx` — **Asta Live**: registra le aggiudicazioni durante l'asta e
+  mostra chi può ancora rilanciare. È la schermata che rende raggiungibile dal bundle il
+  motore di transazione, l'Indice Modificatore e `coaches.json` — prima erano scaffolding
+  compilato ma escluso dall'APK.
 - `app/player/[id].tsx` — **dettaglio calciatore** (US21): sezioni economiche, rendimento,
   metriche analitiche, rischio infortuni. Ci si arriva toccando il **corpo** di
   una riga; il pulsante "+" a destra continua ad aprire `CategorySheet`. Le due azioni
@@ -454,12 +460,319 @@ pubblicazione di un dataset intatto.
   connessione" da solo copriva indistintamente il telefono in galleria, il 429 e l'URL
   irraggiungibile, e mandava a caccia della causa sbagliata.
 
+### Dati tattici per squadra (`dataset/coaches.json`)
+
+Artefatto separato dal dataset dei giocatori, generato da `npm run coaches`: per ognuna
+delle 20 squadre, allenatore in carica, modulo, xG/xGA/PPDA della stagione conclusa,
+turnover della rosa, cartellini e distribuzione dei gol per reparto. Serve al futuro
+motore agentico, che per valutare un difensore deve sapere anche *come gioca la sua
+squadra*.
+
+Le statistiche di rosa **non costano richieste**: `getLeagueData` restituisce
+`{teams, players, dates}` in una risposta sola, e per un po' ne usavamo metà. Il blocco
+`players` è lo stesso che il provider dei giocatori legge in produzione, quindi la pagina
+Rosa di Transfermarkt — venti richieste in più, parsing fragile, conteggi mescolati fra
+campionato e coppe — non serve.
+
+**Sta fuori da `build_dataset.py` e dal gate di rilascio.** I dati degli allenatori
+cambiano poche volte a stagione, il dataset giocatori ogni lunedì: legarli significherebbe
+quaranta richieste a Transfermarkt a settimana per riscrivere lo stesso file, e una fonte
+in più che può bloccare il rilascio. Il file è pubblicato su Pages ma **non è nel contratto
+di sync** — il motore scarica `manifest.json` → `players.json` e nient'altro.
+
+Quattro cose non deducibili dal codice:
+
+- **La pagina degli allenatori di competizione non esiste più** (404). Si passa per club:
+  la pagina "Organigramma" (`/{slug}/mitarbeiter/verein/{id}`), che elenca ~25 persone fra
+  vice, preparatori e collaboratori. L'allenatore è quello il cui ruolo è **esattamente**
+  "Allenatore": un confronto per sottostringa restituirebbe "Vice allenatore", che nella
+  pagina viene prima.
+- **L'etichetta del modulo è "Modulo più utilizzato ultimi 2 anni"**, non "Modulo
+  preferito", e si cerca per parola chiave e non per posizione: le righe di quella tabella
+  cambiano da un allenatore all'altro.
+- **Il PPDA non si media.** È un rapporto, e la media dei rapporti non è il rapporto delle
+  somme: il valore di stagione è Σatt/Σdef. Sbagliarlo produce un numero plausibile che
+  nessuno verificherebbe — per questo il campo si chiama `ppda_stagione` e non
+  `ppda_medio`, e per questo c'è un test dedicato.
+- **Comanda il listone, non Transfermarkt.** L'elenco delle squadre viene da
+  `assets/data/listone.csv`, e il campo `squadra` porta il nome come lo scrive il listone
+  (`Milan`, non `AC Milan`): è il vocabolario dell'app, e permetterà all'agente di unire
+  questo file ai giocatori senza normalizzare di nuovo.
+
+- **I trasferiti hanno una regola per campo, e non è pignoleria.** Understat pubblica una
+  riga per giocatore per stagione: chi cambia squadra a gennaio ha `team_title` a più
+  valori (`"Napoli,Torino"`) e le statistiche già sommate fra le due, senza ripartizione.
+  Il **turnover lo conta in entrambe** le squadre — entrambe lo hanno davvero schierato, ed
+  è esattamente ciò che l'indice misura. **Cartellini e gol in nessuna**, perché darli a
+  tutte e due significherebbe gonfiare due numeri con dati inventati. Il costo è
+  dichiarato: quei due campi sono leggermente *incompleti* per le squadre coinvolte in
+  scambi invernali — un buco noto e in una direzione sola, contro una sovrastima che
+  nessuno saprebbe quantificare leggendo il file. Renderla "uniforme" ne sbaglierebbe due
+  su tre.
+- **I portieri restano fuori** dai tre secchielli della distribuzione e dal denominatore,
+  così le percentuali sommano a 100. Un gol di portiere capita una volta ogni due
+  stagioni, e un quarto secchiello vuoto per 19 squadre su 20 costerebbe più di quanto
+  vale. Il ruolo viene da Understat (`position`) e non dal listone: è quello con cui il
+  giocatore ha giocato *quella* stagione.
+
+Le tre neopromosse escono con tutti i campi Understat a `null`: in Serie A non hanno
+giocato, e `normalize_team` le risolve comunque. È il caso previsto, non un matching
+fallito. `null` e non zero — zero direbbe "non ha schierato nessuno", che è falso.
+
+### Stato d'asta (`scripts/dataset/stato_asta.json`)
+
+I partecipanti della lega su Leghe Fantacalcio, inizializzati a 500 crediti e rose vuote.
+Si rigenera con `npm run asta` e serve al futuro motore agentico: senza sapere chi c'è al
+tavolo e con quanti crediti, un consiglio d'asta è solo una valutazione in astratto.
+
+**Non è versionato**, e la ragione è precisa: Pages serve la radice di `main`, quindi un
+file committato è pubblicamente scaricabile — i nomi delle squadre della lega finirebbero
+online. In più è stato vivo, che cambia a ogni acquisto.
+
+Cinque cose scoperte facendolo girare, nessuna deducibile dal codice:
+
+- **L'area leghe ha un login proprio.** Riusare `download_listone.login` non funziona: i
+  cookie di sessione (`fantacalcio.it`, `client.fantacalcio.it`) sono **host-only** su
+  `www.fantacalcio.it`, quindi il browser non li manda a `leghe.fantacalcio.it`, e
+  replicarli a mano sul sottodominio non basta perché il backend non li riconosce. Si
+  passa dal form di `/login`, i cui campi non hanno `name` né `id`: si selezionano per
+  placeholder.
+- **Gli interstiziali pubblicitari intercettano i click.** Playwright riporta un click
+  riuscito, la pagina non cambia, e il passo dopo fallisce parlando d'altro. `chiudi_overlay`
+  li chiude prima di ogni passo, e `clicca` ritenta una volta dopo averli chiusi.
+- **Nella lega si entra per `href`, non cliccando.** È la difesa definitiva contro il
+  punto sopra: l'ancora porta un URL normale (`/io-ete`) e un `goto` non è intercettabile.
+- **Il flusso "Menù → Partecipanti" non esiste.** Il menu della lega ha Mercato, Lista
+  calciatori, Opzioni di Lega e altro, ma nessuna voce Partecipanti. Le squadre stanno
+  dietro "Dai uno sguardo alle altre squadre", cioè `/view/rosters`. I percorsi che
+  verrebbero da indovinare (`/view/rose`, `/view/partecipanti`) redirigono in silenzio
+  alla radice della lega — nessun 404, solo la pagina sbagliata.
+- **Il selettore è `.ant-card-meta-title`** (markup Angular): titolo della card è il nome
+  squadra, la descrizione è il nickname del proprietario. Un selettore generico come
+  `ul li` sembrava funzionare e restituiva il **menu** al posto delle squadre: il file era
+  uscito con "Mercato" e "Lista calciatori" fra i partecipanti. Quelle etichette sono ora
+  in `NON_SQUADRE` proprio perché ci sono finite davvero.
+
+**Un rilancio non azzera niente**: le squadre già nel file mantengono crediti, slot e
+rosa, e solo le nuove partono dai default. È ciò che rende sicuro rigenerare a metà asta
+quando entra un partecipante in ritardo. Una squadra sparita dall'elenco resta in coda e
+il report la segnala: distinguere "ha lasciato la lega" da "ha rinominato la squadra" è
+impossibile dall'esterno, e una rosa costruita in asta non si butta su un'ipotesi.
+
 ### Metriche in RAM: la deroga consapevole
 
 `player_stats` **non** viene idratata al boot, a differenza del listone. Il listone sta in
 RAM perché lo scroll lo attraversa tutto; le metriche si leggono una riga per volta su tap
 esplicito (`usePlayerStatsStore`), fuori dal percorso caldo. L'invariante "filtri e ricerca
 non toccano il DB" resta intatta.
+
+### Come lo stato d'asta arriva sul telefono (schema v4)
+
+Il file è gitignorato, e questo esclude **entrambe** le strade che l'app ha per ricevere
+dati: l'asset imbarcato va committato, e il sync passa da Pages — in tutti e due i casi i
+nomi della lega finirebbero online. Serviva quindi una terza strada, ed è un **import una
+tantum**: il JSON è un *seme*, non una fonte viva.
+
+È anche la scelta giusta a prescindere dal gitignore. Durante un'asta i crediti si scalano
+dal telefono mentre il banditore conta, non rilanciando uno scraper: da dopo l'import la
+proprietà dello stato è dell'app.
+
+```
+stato_asta.json  --[import_opponents]-->  SQLite: opponents  -->  useOpponentsStore
+   (seme, locale)                          (per configurazione)         |
+                                                                        v
+                                                            get_opponents (agente)
+```
+
+- **`opponents` è per configurazione**, non globale: un'asta *è* una configurazione, e due
+  leghe hanno avversari diversi. `ON DELETE CASCADE` come la watchlist.
+- **`is_me` marca la tua squadra.** Senza, l'agente sa che in giro restano 380 crediti ma
+  non quanti ne ha chi gli sta chiedendo consiglio: è la differenza fra un dato e una
+  decisione. Lo scraper la deduce dal nickname del proprietario (`--mia-squadra` per dirlo
+  a mano), e i comproprietari vanno separati — il sito scrive "giacomo · tonygra13" in una
+  cella sola, e confrontare la stringa intera non trova mai niente.
+- **L'import sostituisce, non fonde**, ed è deliberato: il merge che preserva crediti e
+  rose vive già a monte in `asta.py`, dove c'è lo storico. Rifarlo anche qui darebbe due
+  regole di fusione da tenere allineate, e la seconda si scoprirebbe sbagliata in asta.
+  `DELETE` e `INSERT` stanno nella stessa transazione: non esiste un istante con zero
+  partecipanti.
+- **Il parser scarta la riga, non il file** (`statoAstaParser.ts`). Un partecipante coi
+  crediti illeggibili non deve impedire di importare gli altri otto — stessa regola di
+  `datasetMapper` coi giocatori. Rifiuta invece **in blocco** un array vuoto: scritto sopra
+  un'asta in corso cancellerebbe tutto, ed è quasi sempre uno scraper andato male.
+- **`offertaMassima` sta nel dominio**, non nel modello: non è il totale dei crediti, perché
+  ogni slot ancora vuoto va coperto da almeno un credito. È il numero che dice se un
+  avversario può davvero rilanciare, e calcolarlo lì fa sì che UI e agente rispondano la
+  stessa cosa. L'aritmetica è ciò che un LLM sbaglia più volentieri.
+
+`import_opponents` è un tool e non una schermata perché è il canale più piccolo che
+funziona quando ci sarà il runtime LLM. **Ma sul telefono quel tool non è chiamabile**, e
+non per un difetto suo: `src/agent/registry.ts` non è importato da nessun modulo
+raggiungibile dall'entry point, quindi l'intero layer agentico — `get_configuration`
+compreso, che c'è da sempre — **non finisce nel bundle**. Verificato cercando i nomi dei
+tool nel bundle di sviluppo: zero occorrenze. È coerente con "nessun modello lo invoca",
+ma va saputo prima di provare a usarlo da un dispositivo.
+
+Per il collaudo sul telefono l'import passa quindi da un'altra strada: `bootHook`, nodo
+4b. In `__DEV__`, se la configurazione attiva non ha ancora avversari, importa il seme
+imbarcato nel bundle (`statoAstaSeed.ts`) chiamando direttamente `importSeed`. Tre
+guardie: solo in sviluppo, solo a tabella vuota — **non si sovrascrive mai un'asta in
+corso** — e solo con una configurazione attiva.
+
+Il seme finisce nel bundle perché Metro impacchetta i `.json` importati staticamente: il
+file resta gitignorato e non passa da git, ma è dentro la build fatta su questa macchina.
+Da qui la guardia sul clone pulito: Metro risolve gli import a build time, quindi un file
+mancante è un errore di bundling e non un `null` a runtime. `npm install` e `npm start`
+lanciano `scripts/ensure_seed.js`, che lo crea vuoto se non c'è — e non lo sovrascrive
+mai, perché azzerare un'asta in corso per una reinstallazione delle dipendenze sarebbe un
+danno silenzioso.
+
+`__tests__/statoAstaContract.test.ts` verifica il contratto Python↔TypeScript **sul file
+vero**, e si salta se il file non c'è: un clone senza credenziali non ha una lega da
+leggere. Stessa scelta di `datasetContract`.
+
+## Il "Cervello": asta, middleware, LLM
+
+Architettura di base del copilota d'asta. Come il resto di `src/agent/`, **niente di
+questo è ancora raggiungibile dal bundle**: nessun modulo dell'app importa
+`auctionHook`, `registry` o il client Groq, quindi il codice compila, è tipizzato e
+testato, ma non finisce nell'APK finché una schermata non lo chiama. È la stessa
+condizione dei tool esistenti, e va saputa prima di cercarlo sul telefono.
+
+### Il Motore di Transazione è uno `Stage`, non un sistema nuovo
+
+`core/middleware/hooks/auctionHook.ts` registra un'aggiudicazione, ed è la **Fase 1**
+del middleware agentico. Non è servita un'astrazione nuova: `validate → reduce → effect`
+*è* la "configurazione sequenziale fissa", e il commento di `pipeline.ts` prevedeva da
+subito che un'azione dell'agente l'avrebbe percorsa. Un secondo middleware con lo stesso
+vocabolario avrebbe dato due sistemi da tenere allineati a mano.
+
+Due decisioni non deducibili dal codice:
+
+- **Il vincolo non è "ha abbastanza crediti", è `offertaMassima`.** Con 100 crediti e 10
+  slot da riempire il massimo su un singolo giocatore è 91: gli altri nove posti vanno
+  comunque coperti. La funzione era già in `domain/opponent.ts`; riusarla qui significa
+  che UI, validazione e agente applicano la stessa regola, definita una volta sola.
+- **La pipeline non solleva, e non è stata piegata.** La specifica chiedeva un'eccezione
+  bloccante, ma `dispatch` restituisce `{ ok, reason }` e `executeTool` ha la regola
+  opposta — un errore restituito come dato permette al modello di correggersi al turno
+  dopo. `registraAcquisto` restituisce l'esito, `registraAcquistoOrThrow` è un involucro
+  di tre righe per chi vuole l'altra semantica.
+
+**"Svincolato" è derivato, non una colonna.** Non esiste un flag: `is_active = false`
+significa "uscito dalla Serie A", che è un'altra cosa. È libero chi non compare nella
+`rosa` di nessun partecipante — un fatto che vive già in `opponents`. Una colonna
+`svincolato` sarebbe una seconda fonte per la stessa verità, e la seconda si scoprirebbe
+sbagliata a metà asta.
+
+### Fase 2: l'unica astrazione davvero nuova
+
+`agent/middleware/wrap.ts`. Uno `Stage` decide *se* proseguire; un avvolgimento decide
+*come* si esegue, e può rieseguire — è la differenza che serve per rotazione delle chiavi,
+timeout e fallback. **L'ordine di dichiarazione è l'ordine di esecuzione**: il primo della
+lista è il più esterno.
+
+Non è pignoleria. `compose(withTimeout, withKeyRotation)` mette il timeout *fuori*, quindi
+copre l'intero giro delle chiavi; invertendoli ripartirebbe da capo a ogni chiave, e cinque
+chiavi lente diventerebbero cinque attese intere.
+
+### Rotazione delle chiavi Groq
+
+Tre regole, ognuna contro un modo diverso di fallire:
+
+- **Lo stato sopravvive alla singola chiamata.** Ripartire dalla prima chiave a ogni
+  richiesta significherebbe pagare un 429 per richiesta prima di arrivare a una viva.
+- **`Retry-After` si onora solo a giro esaurito.** Avere cinque chiavi serve esattamente a
+  non aspettare.
+- **401 non è 429.** Una chiave revocata esce dal giro: lasciarla in rotazione la farebbe
+  riprovare a ogni ciclo, sembrando un rate limit permanente.
+
+**I modelli stanno in `app.json`, non nel codice.** Groq li dismette con poco preavviso:
+`llama-3.1-70b-versatile`, che compare in molta documentazione, risponde
+`model_decommissioned`. I default (`llama-3.3-70b-versatile`, `llama-3.1-8b-instant`) vanno
+verificati sulla console prima della prima chiamata vera.
+
+**Le chiavi in `expo.extra` finiscono nel bundle e sono estraibili con `strings`.**
+Decisione consapevole per una build personale — le chiavi Groq gratuite si revocano dalla
+console in un istante — con due conseguenze: **l'APK non si condivide**, e se esce di mano
+le chiavi si revocano. Per una distribuzione vera servirebbe un proxy o
+`expo-secure-store`.
+
+### Indice Modificatore
+
+`domain/modifierIndex.ts`, accanto a `metrics.ts`: "questo difensore vale da modificatore"
+è un giudizio, e deve dire la stessa cosa a UI, agente e futuri confronti.
+
+- **Percentili, non valori assoluti.** 0.8 di xGBuildup e 45 di xGA non stanno sullo stesso
+  righello. Effetto collaterale: `xga_totali` e `xga_per_90` producono lo stesso
+  ordinamento — tutte le squadre giocano 38 partite — quindi il per-90 si calcola per
+  onestà dell'etichetta, non perché cambi la classifica.
+- **Un dato mancante ridistribuisce il peso, non vale zero.** Un difensore senza xGBuildup
+  non è pessimo in impostazione: è uno di cui non lo sappiamo. Azzerarlo lo manderebbe in
+  fondo per un buco di copertura. Il campo `copertura` dice su quante gambe sta in piedi
+  l'indice. È la regola `null` ≠ zero applicata a una formula pesata.
+- **PPDA basso = pressing aggressivo**, quindi più falli tattici e più cartellini: sconta
+  il merito difensivo invece di premiarlo. Il verso è contro-intuitivo ed è il motivo per
+  cui ha una costante con un nome esplicito.
+- I pesi sono **una proposta tarabile**, non una verità: la specifica dà le direzioni, non
+  le intensità.
+
+`dataset/coaches.json` arriva come **asset imbarcato** (`core/parsing/coachesAsset.ts`,
+import JSON che Metro impacchetta), con il parser puro separato come per il CSV del
+listone. Nessuna tabella e nessuna migrazione: venti righe che cambiano una volta a
+settimana. Il prezzo dichiarato è che **si aggiornano solo ricompilando**.
+
+### La schermata Asta Live
+
+Il mestiere non è "valutare un giocatore" — quello lo fa il dettaglio — ma **registrare
+quel che è appena successo senza sbagliare, vedendo intanto se ci si può ancora
+permettere di combattere**. Due stati: *in attesa* (ricerca in evidenza, tavolo, propria
+rosa) e *in asta* (il chiamato prende la testa).
+
+- **L'inserimento viene prima del cruscotto**, invertendo la forma consueta della tabella
+  con la modale nascosta: durante un'asta si passa il novanta per cento del tempo a
+  registrare, non a contemplare.
+- **La fila dei contendenti** è l'elemento che questa schermata esiste per mostrare. Ogni
+  squadra è una pastiglia con la sua `offertaMassima`; man mano che il prezzo sale si
+  spengono una a una, e quando ne resta una sola la decisione l'ha presa il tavolo. Usa
+  `offertaMassima` e non i crediti: un avversario con 200 crediti e diciannove slot vuoti
+  non può offrirne 200, e mostrarne il totale lo farebbe sembrare in gara.
+- **La griglia degli slot** riproduce l'oggetto che ogni fantallenatore ha su carta. Un
+  "13/25" direbbe lo stesso totale ma non *quale reparto* è indietro: tre caselle gialle
+  vuote in cima sono un portiere che manca, e si vedono da un metro.
+- **L'annullamento non è un extra.** Un tocco sbagliato in asta è comune, e senza
+  `annullaAcquisto` l'unico rimedio sarebbe reimportare lo stato perdendo la sessione.
+  Restituisce il prezzo **registrato**, non uno passato da fuori: è l'unico che sappiamo
+  essere stato scalato davvero. Le regole dell'acquisto non si applicano — si sta
+  restituendo, non spendendo — o a reparto completo l'annullamento sarebbe bloccato
+  proprio quando l'errore fa più danno.
+- Il pulsante dei suggerimenti passa dal **tool dell'agente**, non da una copia della
+  logica: il bottone e la futura risposta a voce non possono dare due classifiche diverse.
+
+**I due pulsanti di "Prima di cominciare"**, in fondo allo stato in attesa — a un pollice
+di scorrimento, fuori dalla portata di un tocco distratto mentre il banditore conta:
+
+- *Aggiorna listone e statistiche* chiama `syncFromRemote`. **Non rigenera niente**: il
+  telefono scarica il dataset già pubblicato, mentre ricostruirlo dalle fonti resta
+  `npm run listone` + `npm run dataset` da computer. Il sottotitolo lo dice, perché
+  "aggiorna le statistiche" lascerebbe credere che il dispositivo vada a leggere Understat.
+  Dopo un aggiornamento riuscito svuota la cache delle metriche in RAM, che è della
+  versione precedente.
+- *Aggiorna la lega* passa da `mergeOpponents`, che **aggiunge soltanto**. È
+  deliberatamente diversa da `replaceOpponents`: quella cancella e riscrive — giusta per
+  il primo import, letale a metà asta, perché riporterebbe tutti a crediti pieni e rose
+  vuote senza chiedere niente. Il riconoscimento è su nome normalizzato: "Atletico  Bar"
+  con due spazi non deve creare un doppione accanto a quella vera.
+
+  **Limite dichiarato**: il seme è imbarcato nel bundle, quindi il pulsante vede solo le
+  squadre presenti all'ultima build. Una che si iscrive dopo richiede `npm run asta` e una
+  ricompilazione — è il prezzo della scelta di distribuire il seme come asset invece che
+  col sync.
+
+Ogni pulsante mostra il proprio esito accanto a sé e lo tiene finché non lo si ripreme:
+un aggiornamento riuscito e uno che non aveva niente da fare si assomigliano troppo — in
+entrambi i casi lo schermo non cambia — e senza una riga che li distingua si preme due
+volte per sicurezza.
 
 ## Layer agentico
 

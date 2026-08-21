@@ -8,6 +8,7 @@ import {
 import { getDb } from './client';
 import {
   CREATE_DATASET_META_SQL,
+  CREATE_OPPONENTS_SQL,
   CREATE_PLAYER_STATS_SQL,
   CREATE_TABLES_SQL,
   MIGRATE_V2_CONFIGURATIONS_SQL,
@@ -53,6 +54,10 @@ export async function runMigrations(): Promise<void> {
 
     if (current >= 1 && current <= 2) {
       await upgradeV2ToV3();
+    }
+
+    if (current >= 1 && current <= 3) {
+      await upgradeV3ToV4();
     }
 
     await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
@@ -108,6 +113,18 @@ async function upgradeV2ToV3(): Promise<void> {
   const db = await getDb();
   await db.execAsync(CREATE_PLAYER_STATS_SQL);
   await db.execAsync(CREATE_DATASET_META_SQL);
+}
+
+/**
+ * v3 -> v4: la tabella degli avversari. Additiva come la precedente.
+ *
+ * Nasce vuota e resta vuota finche' non si importa `stato_asta.json`: nessuna
+ * lega ha avversari prima che qualcuno glieli dica, e una tabella vuota qui
+ * significa "asta non ancora impostata", non "asta senza partecipanti".
+ */
+async function upgradeV3ToV4(): Promise<void> {
+  const db = await getDb();
+  await db.execAsync(CREATE_OPPONENTS_SQL);
 }
 
 /** Configurazione ponte per le assegnazioni ereditate da v1: gia' attiva. */

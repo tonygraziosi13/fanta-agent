@@ -50,11 +50,22 @@ from .base import ProviderOutcome
 # compare sempre in coda a quello vero ("F S").
 POSITION_TO_ROLE = {"GK": "P", "D": "D", "M": "C", "F": "A"}
 
-# La pagina serviva i dati inline: playersData = JSON.parse('\x5B\x7B...').
-PLAYERS_DATA = re.compile(r"playersData\s*=\s*JSON\.parse\(\s*'(.*?)'\s*\)", re.DOTALL)
+# La pagina serve i dati inline come: <nome> = JSON.parse('\x5B\x7B...').
+# Il nome del blocco e' un parametro e non una costante: la stessa pagina ne
+# contiene piu' d'uno (`playersData`, `teamsData`) e `coaches.py` ha bisogno di
+# quello delle squadre.
+def _json_block_pattern(name: str) -> "re.Pattern[str]":
+    return re.compile(rf"{re.escape(name)}\s*=\s*JSON\.parse\(\s*'(.*?)'\s*\)", re.DOTALL)
 
 
-def _role_of(position: str) -> Optional[str]:
+def role_of(position: str) -> Optional[str]:
+    """
+    Il ruolo principale da una posizione Understat ("F S" -> "A", "M" -> "C").
+
+    Pubblica perche' la usa anche `coaches.py`, che classifica i marcatori per
+    reparto: duplicarne le quattro righe significherebbe poter cambiare la mappa
+    dei ruoli in un posto solo su due, e accorgersene molto dopo.
+    """
     for token in position.split():
         role = POSITION_TO_ROLE.get(token)
         if role is not None:
@@ -91,21 +102,27 @@ def decode_escapes(raw: str) -> str:
         return unescaped
 
 
-def extract_players_data(html: str) -> Optional[list[dict[str, Any]]]:
+def extract_json_block(html: str, name: str) -> Optional[Any]:
     """
-    Isola il blocco `playersData` dall'HTML; None se non c'e'.
+    Isola un blocco `<nome> = JSON.parse('...')` dall'HTML; None se non c'e'.
 
     E' la via storica. Quando Understat sposta i dati su XHR il blocco sparisce,
     e None e' il segnale per passare all'endpoint JSON invece di concludere che
-    la lega e' vuota — che sono due situazioni molto diverse.
+    la lega e' vuota — che sono due situazioni molto diverse, e confonderle fa
+    perdere una lega intera in silenzio.
     """
-    found = PLAYERS_DATA.search(html)
+    found = _json_block_pattern(name).search(html)
     if not found:
         return None
     try:
-        parsed = json.loads(decode_escapes(found.group(1)))
+        return json.loads(decode_escapes(found.group(1)))
     except ValueError:
         return None
+
+
+def extract_players_data(html: str) -> Optional[list[dict[str, Any]]]:
+    """Il blocco dei giocatori: un caso particolare di `extract_json_block`."""
+    parsed = extract_json_block(html, "playersData")
     return parsed if isinstance(parsed, list) else None
 
 
@@ -134,7 +151,7 @@ class UnderstatProvider:
                 key=self._key(p),
                 raw_name=str(p.get("player_name", "")),
                 teams=normalize_teams(str(p.get("team_title", ""))),
-                role=_role_of(str(p.get("position", ""))),
+                role=role_of(str(p.get("position", ""))),
             )
             for p in players
         ]

@@ -1,8 +1,11 @@
 import { runMigrations } from '@/core/db/migrations';
+import { readDevSeed } from '@/core/parsing/statoAstaSeed';
+import { countOpponents } from '@/core/repositories/opponentsRepository';
 import { countPlayers } from '@/core/repositories/playersRepository';
 import { syncFromBundle, syncFromRemote } from '@/core/sync/syncService';
 import type { SyncOutcome } from '@/core/sync/syncEngine';
 import { useCategoriesStore } from '@/state/useCategoriesStore';
+import { useOpponentsStore } from '@/state/useOpponentsStore';
 import { useConfigurationsStore } from '@/state/useConfigurationsStore';
 import { usePlayerStatsStore } from '@/state/usePlayerStatsStore';
 import { usePlayersStore } from '@/state/usePlayersStore';
@@ -114,6 +117,49 @@ function describeFailure(outcome: SyncOutcome): string | null {
   return outcome.status === 'failed' ? outcome.error : null;
 }
 
+/**
+ * Semina lo stato d'asta in sviluppo, se non c'e' gia'.
+ *
+ * `stato_asta.json` e' gitignorato e non ha modo di raggiungere il dispositivo
+ * da solo (vedi `statoAstaSeed.ts`). Questo nodo lo importa una volta al primo
+ * avvio dopo averlo generato, cosi' la catena si puo' collaudare sul telefono
+ * senza incollare due chilobyte in una console.
+ *
+ * Tre guardie, e ognuna evita un danno diverso:
+ *
+ *   `__DEV__`          in produzione sarebbe un dato personale dentro l'app.
+ *   nessun avversario  non si sovrascrive **mai** un'asta gia' impostata: i
+ *                      crediti scalati durante una sessione valgono piu' di un
+ *                      seme che li riporterebbe tutti a 500.
+ *   configurazione     gli avversari appartengono a una lega; senza `config_id`
+ *                      non avrebbero dove stare.
+ *
+ * Non solleva mai: seminare e' una comodita' di sviluppo, e un seme malformato
+ * non deve impedire di aprire l'app.
+ */
+async function seedOpponentsInDev(configId: number | null): Promise<void> {
+  if (!__DEV__ || configId === null) return;
+
+  try {
+    if ((await countOpponents(configId)) > 0) return;
+
+    const raw = readDevSeed();
+    if (raw === null) return;
+
+    const esito = await useOpponentsStore.getState().importSeed(raw, configId);
+    if (esito.ok) {
+      console.log(
+        `[asta] seme importato: ${esito.imported} squadre` +
+          (esito.skipped > 0 ? `, ${esito.skipped} scartate` : '')
+      );
+    } else {
+      console.warn(`[asta] seme non importato: ${esito.error}`);
+    }
+  } catch (error) {
+    console.warn('[asta] import del seme fallito:', error);
+  }
+}
+
 export async function runBootSequence(callbacks: BootCallbacks = {}): Promise<BootResult> {
   const { onPhase } = callbacks;
   const report = (phase: BootPhase) => onPhase?.(phase);
@@ -147,7 +193,16 @@ export async function runBootSequence(callbacks: BootCallbacks = {}): Promise<Bo
     // caricare richiede prima di sapere qual e' la configurazione attiva.
     // Con `null` (primo avvio, nessuna configurazione) resta semplicemente vuota
     // e la UI mostrera' il wizard iniziale.
-    await useWatchlistStore.getState().load(useConfigurationsStore.getState().activeId);
+    const activeId = useConfigurationsStore.getState().activeId;
+    await useWatchlistStore.getState().load(activeId);
+
+    // --- Nodo 4b: gli avversari dell'asta attiva.
+    // Atteso, a differenza del sync: sono nove righe, e l'agente non deve
+    // poterle trovare a meta' se qualcuno gli chiede qualcosa subito.
+    await seedOpponentsInDev(activeId);
+    if (activeId !== null) {
+      await useOpponentsStore.getState().load(activeId);
+    }
 
     // --- Nodo 5: aggiornamento in background (solo ad avvio caldo).
     // Deliberatamente NON atteso, come gli `effect` della pipeline: la UI e'

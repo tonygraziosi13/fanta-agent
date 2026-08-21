@@ -90,6 +90,42 @@ export const RISK_COLORS: Record<RiskBand, string> = {
   alto: '#EF4444',
 };
 
+export type RatingBand = 'ottima' | 'media' | 'scarsa';
+
+/**
+ * Fasce della fantamedia.
+ *
+ * Le soglie sono quelle del gioco, non una scala grafica: 6.0 e' il voto di
+ * chi ha giocato senza incidere, e la fantamedia ci somma i bonus. Sotto 5.8
+ * il giocatore sta togliendo punti alla rosa; sopra 6.8 li sta aggiungendo con
+ * continuita'. In mezzo c'e' il titolare che non fa la differenza.
+ *
+ * Stanno qui e non nel badge per la stessa ragione delle fasce di rischio:
+ * "fantamedia ottima" e' un giudizio, e deve dire la stessa cosa nella
+ * schermata, in un futuro confronto fra due giocatori e nelle risposte
+ * dell'agente.
+ */
+export const RATING_THRESHOLDS = { ottima: 6.8, media: 5.8 } as const;
+
+export function ratingBand(fantamedia: number | null): RatingBand | null {
+  if (fantamedia === null) return null;
+  if (fantamedia >= RATING_THRESHOLDS.ottima) return 'ottima';
+  if (fantamedia >= RATING_THRESHOLDS.media) return 'media';
+  return 'scarsa';
+}
+
+export const RATING_LABELS: Record<RatingBand, string> = {
+  ottima: 'Fantamedia ottima',
+  media: 'Fantamedia nella media',
+  scarsa: 'Fantamedia scarsa',
+};
+
+export const RATING_COLORS: Record<RatingBand, string> = {
+  ottima: '#22C55E',
+  media: '#F5C518',
+  scarsa: '#EF4444',
+};
+
 /**
  * Frazione 0..1 per le barre di `StatBar`.
  * Satura invece di sforare: una barra oltre il contenitore e' un bug grafico,

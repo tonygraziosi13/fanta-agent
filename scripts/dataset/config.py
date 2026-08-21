@@ -43,6 +43,11 @@ def ultima_stagione_conclusa(oggi: "date | None" = None) -> int:
 
 UNDERSTAT_SEASON = str(ultima_stagione_conclusa())
 
+# Stagione **in corso**, quella del listone: Transfermarkt la identifica con
+# l'anno d'inizio nel parametro `saison_id`. E' la conclusa piu' uno, e non un
+# secondo calcolo indipendente, cosi' le due non possono divergere a settembre.
+TM_SEASON = str(ultima_stagione_conclusa() + 1)
+
 UNDERSTAT_BASE = "https://understat.com"
 UNDERSTAT_URL = "https://understat.com/main/getPlayersStats/"
 

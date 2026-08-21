@@ -13,6 +13,10 @@
     "listone": "python scripts/refresh_listone.py",
     "listone:xlsx": "python scripts/xlsx_to_csv.py",
     "dataset": "python scripts/build_dataset.py",
+    "coaches": "python scripts/build_coaches.py",
+    "asta": "python scripts/fetch_asta.py",
+    "postinstall": "node scripts/ensure_seed.js",
+    "prestart": "node scripts/ensure_seed.js",
     "dataset:test": "python -m unittest discover -s scripts -p \"test_*.py\""
   },
   "dependencies": {

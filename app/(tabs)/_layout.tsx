@@ -45,6 +45,13 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="asta"
+        options={{
+          title: 'Asta',
+          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>🔨</Text>,
+        }}
+      />
+      <Tabs.Screen
         name="watchlist"
         options={{
           title: 'Watchlist',

@@ -1,0 +1,378 @@
+[
+  {
+    "allenatore": "Maurizio Sarri",
+    "squadra": "Atalanta",
+    "modulo_base": "4-3-3",
+    "xg_totali": 68.65,
+    "xga_totali": 51.7,
+    "ppda_stagione": 10.63,
+    "giocatori_impiegati_storico": 27,
+    "gialli_totali": 55,
+    "rossi_totali": 2,
+    "distribuzione_gol": {
+      "difensori": 11,
+      "centrocampisti": 9,
+      "attaccanti": 28,
+      "totale": 48,
+      "difensori_perc": 22.9,
+      "centrocampisti_perc": 18.8,
+      "attaccanti_perc": 58.3
+    }
+  },
+  {
+    "allenatore": "Domenico Tedesco",
+    "squadra": "Bologna",
+    "modulo_base": "4-2-3-1",
+    "xg_totali": 50.04,
+    "xga_totali": 50.91,
+    "ppda_stagione": 9.89,
+    "giocatori_impiegati_storico": 30,
+    "gialli_totali": 59,
+    "rossi_totali": 5,
+    "distribuzione_gol": {
+      "difensori": 2,
+      "centrocampisti": 6,
+      "attaccanti": 34,
+      "totale": 42,
+      "difensori_perc": 4.8,
+      "centrocampisti_perc": 14.3,
+      "attaccanti_perc": 81.0
+    }
+  },
+  {
+    "allenatore": "Fabio Pisacane",
+    "squadra": "Cagliari",
+    "modulo_base": "3-5-2",
+    "xg_totali": 43.73,
+    "xga_totali": 60.36,
+    "ppda_stagione": 14.78,
+    "giocatori_impiegati_storico": 31,
+    "gialli_totali": 68,
+    "rossi_totali": 2,
+    "distribuzione_gol": {
+      "difensori": 11,
+      "centrocampisti": 2,
+      "attaccanti": 23,
+      "totale": 36,
+      "difensori_perc": 30.6,
+      "centrocampisti_perc": 5.6,
+      "attaccanti_perc": 63.9
+    }
+  },
+  {
+    "allenatore": "Cesc Fàbregas",
+    "squadra": "Como",
+    "modulo_base": "4-2-3-1",
+    "xg_totali": 67.97,
+    "xga_totali": 39.54,
+    "ppda_stagione": 7.71,
+    "giocatori_impiegati_storico": 24,
+    "gialli_totali": 78,
+    "rossi_totali": 3,
+    "distribuzione_gol": {
+      "difensori": 13,
+      "centrocampisti": 17,
+      "attaccanti": 34,
+      "totale": 64,
+      "difensori_perc": 20.3,
+      "centrocampisti_perc": 26.6,
+      "attaccanti_perc": 53.1
+    }
+  },
+  {
+    "allenatore": "Fabio Grosso",
+    "squadra": "Fiorentina",
+    "modulo_base": "4-3-3",
+    "xg_totali": 52.17,
+    "xga_totali": 57.46,
+    "ppda_stagione": 12.49,
+    "giocatori_impiegati_storico": 34,
+    "gialli_totali": 70,
+    "rossi_totali": 3,
+    "distribuzione_gol": {
+      "difensori": 8,
+      "centrocampisti": 12,
+      "attaccanti": 19,
+      "totale": 39,
+      "difensori_perc": 20.5,
+      "centrocampisti_perc": 30.8,
+      "attaccanti_perc": 48.7
+    }
+  },
+  {
+    "allenatore": "Massimiliano Alvini",
+    "squadra": "Frosinone",
+    "modulo_base": "4-3-3",
+    "xg_totali": null,
+    "xga_totali": null,
+    "ppda_stagione": null,
+    "giocatori_impiegati_storico": null,
+    "gialli_totali": null,
+    "rossi_totali": null,
+    "distribuzione_gol": null
+  },
+  {
+    "allenatore": "Daniele De Rossi",
+    "squadra": "Genoa",
+    "modulo_base": "3-5-2",
+    "xg_totali": 48.13,
+    "xga_totali": 55.7,
+    "ppda_stagione": 10.05,
+    "giocatori_impiegati_storico": 36,
+    "gialli_totali": 58,
+    "rossi_totali": 3,
+    "distribuzione_gol": {
+      "difensori": 10,
+      "centrocampisti": 10,
+      "attaccanti": 19,
+      "totale": 39,
+      "difensori_perc": 25.6,
+      "centrocampisti_perc": 25.6,
+      "attaccanti_perc": 48.7
+    }
+  },
+  {
+    "allenatore": "Cristian Chivu",
+    "squadra": "Inter",
+    "modulo_base": "3-5-2",
+    "xg_totali": 87.05,
+    "xga_totali": 35.85,
+    "ppda_stagione": 9.66,
+    "giocatori_impiegati_storico": 29,
+    "gialli_totali": 63,
+    "rossi_totali": 0,
+    "distribuzione_gol": {
+      "difensori": 19,
+      "centrocampisti": 24,
+      "attaccanti": 42,
+      "totale": 85,
+      "difensori_perc": 22.4,
+      "centrocampisti_perc": 28.2,
+      "attaccanti_perc": 49.4
+    }
+  },
+  {
+    "allenatore": "Luciano Spalletti",
+    "squadra": "Juventus",
+    "modulo_base": "3-4-2-1",
+    "xg_totali": 74.16,
+    "xga_totali": 36.12,
+    "ppda_stagione": 10.58,
+    "giocatori_impiegati_storico": 27,
+    "gialli_totali": 49,
+    "rossi_totali": 2,
+    "distribuzione_gol": {
+      "difensori": 24,
+      "centrocampisti": 6,
+      "attaccanti": 28,
+      "totale": 58,
+      "difensori_perc": 41.4,
+      "centrocampisti_perc": 10.3,
+      "attaccanti_perc": 48.3
+    }
+  },
+  {
+    "allenatore": "Gennaro Gattuso",
+    "squadra": "Lazio",
+    "modulo_base": "4-2-3-1",
+    "xg_totali": 46.18,
+    "xga_totali": 49.0,
+    "ppda_stagione": 16.66,
+    "giocatori_impiegati_storico": 30,
+    "gialli_totali": 75,
+    "rossi_totali": 8,
+    "distribuzione_gol": {
+      "difensori": 2,
+      "centrocampisti": 12,
+      "attaccanti": 24,
+      "totale": 38,
+      "difensori_perc": 5.3,
+      "centrocampisti_perc": 31.6,
+      "attaccanti_perc": 63.2
+    }
+  },
+  {
+    "allenatore": "Eusebio Di Francesco",
+    "squadra": "Lecce",
+    "modulo_base": "3-5-2",
+    "xg_totali": 37.23,
+    "xga_totali": 64.8,
+    "ppda_stagione": 11.93,
+    "giocatori_impiegati_storico": 30,
+    "gialli_totali": 65,
+    "rossi_totali": 2,
+    "distribuzione_gol": {
+      "difensori": 3,
+      "centrocampisti": 10,
+      "attaccanti": 12,
+      "totale": 25,
+      "difensori_perc": 12.0,
+      "centrocampisti_perc": 40.0,
+      "attaccanti_perc": 48.0
+    }
+  },
+  {
+    "allenatore": "Rúben Amorim",
+    "squadra": "Milan",
+    "modulo_base": "3-4-2-1",
+    "xg_totali": 64.81,
+    "xga_totali": 46.12,
+    "ppda_stagione": 14.62,
+    "giocatori_impiegati_storico": 26,
+    "gialli_totali": 59,
+    "rossi_totali": 3,
+    "distribuzione_gol": {
+      "difensori": 14,
+      "centrocampisti": 11,
+      "attaccanti": 28,
+      "totale": 53,
+      "difensori_perc": 26.4,
+      "centrocampisti_perc": 20.8,
+      "attaccanti_perc": 52.8
+    }
+  },
+  {
+    "allenatore": "Ivan Jurić",
+    "squadra": "Monza",
+    "modulo_base": "3-4-2-1",
+    "xg_totali": null,
+    "xga_totali": null,
+    "ppda_stagione": null,
+    "giocatori_impiegati_storico": null,
+    "gialli_totali": null,
+    "rossi_totali": null,
+    "distribuzione_gol": null
+  },
+  {
+    "allenatore": "Massimiliano Allegri",
+    "squadra": "Napoli",
+    "modulo_base": "3-5-2",
+    "xg_totali": 57.76,
+    "xga_totali": 41.63,
+    "ppda_stagione": 11.87,
+    "giocatori_impiegati_storico": 29,
+    "gialli_totali": 47,
+    "rossi_totali": 2,
+    "distribuzione_gol": {
+      "difensori": 12,
+      "centrocampisti": 22,
+      "attaccanti": 23,
+      "totale": 57,
+      "difensori_perc": 21.1,
+      "centrocampisti_perc": 38.6,
+      "attaccanti_perc": 40.4
+    }
+  },
+  {
+    "allenatore": "Carlos Cuesta",
+    "squadra": "Parma",
+    "modulo_base": "3-5-2",
+    "xg_totali": 36.15,
+    "xga_totali": 61.8,
+    "ppda_stagione": 13.33,
+    "giocatori_impiegati_storico": 32,
+    "gialli_totali": 56,
+    "rossi_totali": 5,
+    "distribuzione_gol": {
+      "difensori": 8,
+      "centrocampisti": 2,
+      "attaccanti": 16,
+      "totale": 26,
+      "difensori_perc": 30.8,
+      "centrocampisti_perc": 7.7,
+      "attaccanti_perc": 61.5
+    }
+  },
+  {
+    "allenatore": "Gian Piero Gasperini",
+    "squadra": "Roma",
+    "modulo_base": "3-4-2-1",
+    "xg_totali": 62.63,
+    "xga_totali": 42.59,
+    "ppda_stagione": 8.66,
+    "giocatori_impiegati_storico": 29,
+    "gialli_totali": 65,
+    "rossi_totali": 3,
+    "distribuzione_gol": {
+      "difensori": 17,
+      "centrocampisti": 7,
+      "attaccanti": 33,
+      "totale": 57,
+      "difensori_perc": 29.8,
+      "centrocampisti_perc": 12.3,
+      "attaccanti_perc": 57.9
+    }
+  },
+  {
+    "allenatore": "Alberto Aquilani",
+    "squadra": "Sassuolo",
+    "modulo_base": "3-4-2-1",
+    "xg_totali": 48.02,
+    "xga_totali": 61.07,
+    "ppda_stagione": 14.98,
+    "giocatori_impiegati_storico": 34,
+    "gialli_totali": 78,
+    "rossi_totali": 4,
+    "distribuzione_gol": {
+      "difensori": 3,
+      "centrocampisti": 8,
+      "attaccanti": 32,
+      "totale": 43,
+      "difensori_perc": 7.0,
+      "centrocampisti_perc": 18.6,
+      "attaccanti_perc": 74.4
+    }
+  },
+  {
+    "allenatore": "Ignazio Abate",
+    "squadra": "Torino",
+    "modulo_base": "3-5-2",
+    "xg_totali": 51.55,
+    "xga_totali": 60.36,
+    "ppda_stagione": 13.1,
+    "giocatori_impiegati_storico": 30,
+    "gialli_totali": 64,
+    "rossi_totali": 1,
+    "distribuzione_gol": {
+      "difensori": 5,
+      "centrocampisti": 7,
+      "attaccanti": 30,
+      "totale": 42,
+      "difensori_perc": 11.9,
+      "centrocampisti_perc": 16.7,
+      "attaccanti_perc": 71.4
+    }
+  },
+  {
+    "allenatore": "Kosta Runjaić",
+    "squadra": "Udinese",
+    "modulo_base": "3-5-2",
+    "xg_totali": 47.29,
+    "xga_totali": 57.02,
+    "ppda_stagione": 11.6,
+    "giocatori_impiegati_storico": 30,
+    "gialli_totali": 71,
+    "rossi_totali": 2,
+    "distribuzione_gol": {
+      "difensori": 12,
+      "centrocampisti": 2,
+      "attaccanti": 30,
+      "totale": 44,
+      "difensori_perc": 27.3,
+      "centrocampisti_perc": 4.5,
+      "attaccanti_perc": 68.2
+    }
+  },
+  {
+    "allenatore": "Giovanni Stroppa",
+    "squadra": "Venezia",
+    "modulo_base": "3-5-2",
+    "xg_totali": null,
+    "xga_totali": null,
+    "ppda_stagione": null,
+    "giocatori_impiegati_storico": null,
+    "gialli_totali": null,
+    "rossi_totali": null,
+    "distribuzione_gol": null
+  }
+]

@@ -51,3 +51,11 @@ dataset/preview/
 # NOTA: anche dataset/ e' versionato di proposito, ma per un'altra ragione:
 # non e' un asset dell'app, e' cio' che viene *pubblicato*. GitHub Pages serve
 # la radice di main, quindi il commit e' il rilascio (US19-4).
+
+# Stato d'asta: nomi dei partecipanti della lega, crediti e rose.
+#
+# NON versionato, e la ragione e' precisa: GitHub Pages serve la radice di
+# `main`, quindi qualunque file committato e' pubblicamente scaricabile — i
+# nomi delle squadre della lega finirebbero online. In piu' e' stato vivo, che
+# cambia a ogni acquisto: ogni aggiornamento sarebbe rumore in git.
+scripts/dataset/stato_asta.json

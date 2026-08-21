@@ -5,6 +5,7 @@ import {
   isPer90Reliable,
   per90,
   performanceVerdict,
+  ratingBand,
   ratio,
   riskBand,
 } from '@/domain/metrics';
@@ -152,5 +153,68 @@ describe('sezioni del dettaglio', () => {
   it('espone la fascia di rischio per il badge', () => {
     expect(selectInjuries(stats()).band).toBe('basso');
     expect(selectInjuries(stats({ injuries: { days: 200, matches: 30, risk: 0.7, history: [] } })).band).toBe('alto');
+  });
+
+  it('classifica la fantamedia per fasce', () => {
+    expect(ratingBand(7.2)).toBe('ottima');
+    expect(ratingBand(6.1)).toBe('media');
+    expect(ratingBand(5.2)).toBe('scarsa');
+    // Il dato assente non e' una fascia: il badge deve sparire, non dire "scarsa".
+    expect(ratingBand(null)).toBeNull();
+  });
+
+  it('porta la fascia di fantamedia nella sezione rendimento', () => {
+    // 9.1 e' ben sopra la soglia: il badge deve dire "ottima".
+    expect(selectPerformance(stats()).ratingBand).toBe('ottima');
+
+    const scarso = stats({ performance: { ...stats().performance, fantamedia: 5.1 } });
+    expect(selectPerformance(scarso).ratingBand).toBe('scarsa');
+
+    // Senza fantamedia non c'e' giudizio da dare: il badge sparisce.
+    const senza = stats({ performance: { ...stats().performance, fantamedia: null } });
+    expect(selectPerformance(senza).ratingBand).toBeNull();
+  });
+
+  it('tiene le tessere sempre nello stesso numero e ordine', () => {
+    /**
+     * La griglia non deve ballare da un giocatore all'altro: chi non ha dati
+     * mostra un trattino al posto del numero, non una tessera in meno. Con
+     * meno tessere la scheda di chi ha meno dati sembrerebbe piu' completa.
+     */
+    const pieno = selectPerformance(stats()).tiles;
+    const vuoto = selectPerformance(undefined).tiles;
+
+    expect(vuoto).toHaveLength(pieno.length);
+    expect(vuoto.map((t) => t.label)).toEqual(pieno.map((t) => t.label));
+    expect(vuoto.every((t) => t.value === '—')).toBe(true);
+  });
+
+  it('espone i valori grezzi del confronto realizzato/atteso', () => {
+    /**
+     * Il grafico li scala insieme, quindi devono arrivargli non formattati:
+     * due misure della stessa cosa vanno sullo stesso righello.
+     */
+    const { goalDuel, assistDuel } = selectAnalytics(stats());
+
+    expect(goalDuel.actual).toBe(stats().performance.gol);
+    expect(goalDuel.expected).toBe(stats().advanced.xg);
+    expect(assistDuel.expected).toBe(stats().advanced.xa);
+  });
+
+  it('non ripete in elenco i numeri che la testata mostra gia’', () => {
+    const section = selectEconomics(PLAYER);
+    const etichette = section.details.map((l) => l.label);
+
+    expect(section.headline.fvm).toBe('200');
+    expect(section.headline.quotazione).toBe('30');
+    expect(section.headline.trend).toBe('su');
+    expect(etichette).not.toContain('Quotazione attuale');
+    expect(etichette).not.toContain('FantaValore di Mercato');
+  });
+
+  it('dice “invariata” invece di “+0” quando il mercato non l’ha mosso', () => {
+    const fermo = selectEconomics({ ...PLAYER, diff: 0 });
+    expect(fermo.headline.variazione).toBe('invariata');
+    expect(fermo.headline.trend).toBe('fermo');
   });
 });

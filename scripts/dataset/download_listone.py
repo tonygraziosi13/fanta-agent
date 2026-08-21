@@ -92,7 +92,15 @@ def credentials() -> tuple[str, str]:
     return user, password
 
 
-def _login(page, user: str, password: str) -> None:
+def login(page, user: str, password: str) -> None:
+    """
+    Autentica la sessione del browser chiamando l'endpoint di login.
+
+    Pubblica perche' la usa anche `asta.py`: l'area leghe sta su un
+    sottodominio ma condivide i cookie, e duplicare questa funzione
+    significherebbe avere due punti in cui l'endpoint di autenticazione puo'
+    cambiare senza che il secondo se ne accorga.
+    """
     result = page.evaluate(
         """async ([endpoint, utente, segreto]) => {
             const r = await fetch(endpoint, {
@@ -159,10 +167,33 @@ def _save(response, destination_dir: Path) -> Path:
     return path
 
 
-def download(destination_dir: Path = config.CACHE_DIR, headless: bool = True) -> Downloaded:
-    """Scarica l'.xlsx delle quotazioni. Solleva `DownloadError` se non ci riesce."""
-    user, password = credentials()
+def apri_contesto(browser):
+    """
+    Un contesto browser con la sessione salvata, se c'e'.
 
+    Estratta da `download()` perche' serve identica ad `asta.py`: stesso
+    user agent, stessa lingua, stessa sessione riusata. Riscriverla altrove
+    significherebbe poterla far divergere senza accorgersene.
+    """
+    options = {
+        "user_agent": USER_AGENT,
+        "accept_downloads": True,
+        "locale": "it-IT",
+        "viewport": {"width": 1440, "height": 900},
+    }
+    if STORAGE_STATE.exists():
+        options["storage_state"] = str(STORAGE_STATE)
+    return browser.new_context(**options)
+
+
+def salva_sessione(context) -> None:
+    """Conserva i cookie per la prossima esecuzione: un login in meno al sito."""
+    STORAGE_STATE.parent.mkdir(parents=True, exist_ok=True)
+    context.storage_state(path=str(STORAGE_STATE))
+
+
+def avvia_playwright():
+    """`sync_playwright()`, con un errore leggibile se manca il pacchetto."""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -170,19 +201,16 @@ def download(destination_dir: Path = config.CACHE_DIR, headless: bool = True) ->
             "playwright non installato: pip install -r scripts/requirements.txt "
             "&& playwright install chromium"
         ) from None
+    return sync_playwright()
 
-    with sync_playwright() as engine:
+
+def download(destination_dir: Path = config.CACHE_DIR, headless: bool = True) -> Downloaded:
+    """Scarica l'.xlsx delle quotazioni. Solleva `DownloadError` se non ci riesce."""
+    user, password = credentials()
+
+    with avvia_playwright() as engine:
         browser = engine.chromium.launch(headless=headless)
-        options = {
-            "user_agent": USER_AGENT,
-            "accept_downloads": True,
-            "locale": "it-IT",
-            "viewport": {"width": 1440, "height": 900},
-        }
-        if STORAGE_STATE.exists():
-            options["storage_state"] = str(STORAGE_STATE)
-
-        context = browser.new_context(**options)
+        context = apri_contesto(browser)
         try:
             page = context.new_page()
             page.goto(QUOTAZIONI_URL, wait_until="domcontentloaded", timeout=60_000)
@@ -195,9 +223,8 @@ def download(destination_dir: Path = config.CACHE_DIR, headless: bool = True) ->
             # una settimana di pausa.
             response = context.request.get(url, timeout=120_000)
             if response.status == 401:
-                _login(page, user, password)
-                STORAGE_STATE.parent.mkdir(parents=True, exist_ok=True)
-                context.storage_state(path=str(STORAGE_STATE))
+                login(page, user, password)
+                salva_sessione(context)
                 response = context.request.get(url, timeout=120_000)
 
             if not response.ok:

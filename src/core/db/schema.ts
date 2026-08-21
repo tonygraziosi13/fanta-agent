@@ -25,7 +25,7 @@
  * Il dettaglio (US21) si legge invece una riga per volta, su richiesta.
  */
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const CORE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS players (
@@ -150,6 +150,47 @@ CREATE TABLE IF NOT EXISTS dataset_meta (
 `;
 
 /**
+ * Le squadre avversarie dell'asta in corso (schema v4).
+ *
+ * Vengono da `scripts/dataset/stato_asta.json`, che le legge dalla lega su
+ * Leghe Fantacalcio. Quel file e' un **seme**, non una fonte viva: si importa
+ * una volta e da li' in poi lo stato vive qui. E' la scelta giusta perche'
+ * durante un'asta i crediti si scalano dal telefono, non rilanciando uno
+ * scraper — e perche' il file e' gitignorato e non ha modo di raggiungere il
+ * dispositivo per altre strade.
+ *
+ * `config_id` e non una tabella globale: un'asta *e'* una configurazione, e due
+ * leghe hanno avversari diversi. Il CASCADE segue la stessa regola della
+ * watchlist — cancellata la configurazione, spariscono anche i suoi avversari.
+ *
+ * `is_me` marca la squadra dell'utente. Senza, l'agente saprebbe che restano
+ * 380 crediti in giro ma non quanti ne ha chi sta chiedendo: e' la differenza
+ * fra un dato e un consiglio.
+ *
+ * `rosa` e' JSON e non una tabella figlia: e' un elenco che la UI mostra e non
+ * interroga mai per campo, esattamente come `extra` in `player_stats`. Quando
+ * servira' cercarci dentro sara' il momento di normalizzarla, non prima.
+ */
+export const CREATE_OPPONENTS_SQL = `
+CREATE TABLE IF NOT EXISTS opponents (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  config_id    INTEGER NOT NULL REFERENCES configurations(id) ON DELETE CASCADE,
+  nome         TEXT    NOT NULL,
+  proprietario TEXT,
+  is_me        INTEGER NOT NULL DEFAULT 0,
+  crediti      INTEGER NOT NULL,
+  slot_p       INTEGER NOT NULL,
+  slot_d       INTEGER NOT NULL,
+  slot_c       INTEGER NOT NULL,
+  slot_a       INTEGER NOT NULL,
+  -- Elenco degli acquisti, in JSON. Vedi il commento sopra.
+  rosa         TEXT,
+  updated_at   INTEGER NOT NULL,
+  UNIQUE(config_id, nome)
+);
+`;
+
+/**
  * DDL completo nella forma corrente. Gira solo su database vergine
  * (`user_version = 0`): chi arriva da v1/v2 passa dagli step di `migrations.ts`.
  *
@@ -158,7 +199,7 @@ CREATE TABLE IF NOT EXISTS dataset_meta (
  * significherebbe poterle far divergere.
  */
 export const CREATE_TABLES_SQL =
-  CORE_TABLES_SQL + CREATE_PLAYER_STATS_SQL + CREATE_DATASET_META_SQL;
+  CORE_TABLES_SQL + CREATE_PLAYER_STATS_SQL + CREATE_DATASET_META_SQL + CREATE_OPPONENTS_SQL;
 
 /**
  * Upgrade v1 -> v2 per i database gia' installati.

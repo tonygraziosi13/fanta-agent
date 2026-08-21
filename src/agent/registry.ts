@@ -1,9 +1,12 @@
 import type { AgentTool, ToolResult } from './types';
 import { assignPlayerTool } from './tools/assignPlayer';
 import { getConfigurationTool } from './tools/getConfiguration';
+import { getOpponentsTool } from './tools/getOpponents';
+import { importOpponentsTool } from './tools/importOpponents';
 import { getPlayerDetailTool } from './tools/getPlayerDetail';
 import { getWatchlistTool } from './tools/getWatchlist';
 import { searchPlayersTool } from './tools/searchPlayers';
+import { topDefendersModifierTool } from './tools/topDefendersModifier';
 
 /**
  * Registro dei tool disponibili all'agente.
@@ -18,7 +21,10 @@ export const AGENT_TOOLS: ReadonlyArray<AgentTool<any, any>> = [
   getPlayerDetailTool,
   getWatchlistTool,
   getConfigurationTool,
+  getOpponentsTool,
+  topDefendersModifierTool,
   assignPlayerTool,
+  importOpponentsTool,
 ];
 
 /** Serializzazione per il campo `tools` di una richiesta LLM. */

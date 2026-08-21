@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { parseMantraRoles, ROLE_LABELS } from '@/domain/roles';
+import { ROLE_COLORS } from '@/domain/roles';
 import {
   describeMissingData,
   selectAnalytics,
@@ -16,11 +16,19 @@ import { usePlayersStore } from '@/state/usePlayersStore';
 import { useAssignedCategoryId } from '@/state/useWatchlistStore';
 import { CategorySheet } from '@/ui/components/CategorySheet';
 import { EmptyState } from '@/ui/components/EmptyState';
-import { RoleBadge } from '@/ui/components/RoleBadge';
-import { MetricUnavailable, RiskBadge, VerdictBadge } from '@/ui/components/stats/Badges';
+import {
+  MetricUnavailable,
+  RatingBadge,
+  RiskBadge,
+  VerdictBadge,
+} from '@/ui/components/stats/Badges';
+import { InjuryTimeline } from '@/ui/components/stats/InjuryTimeline';
+import { PlayerHero } from '@/ui/components/stats/PlayerHero';
 import { SectionCard } from '@/ui/components/stats/SectionCard';
 import { StatBar } from '@/ui/components/stats/StatBar';
-import { colors, radius, spacing, typography } from '@/ui/theme/theme';
+import { StatTile } from '@/ui/components/stats/StatTile';
+import { XgDuel } from '@/ui/components/stats/XgDuel';
+import { colors, spacing, typography } from '@/ui/theme/theme';
 
 /**
  * Dettaglio calciatore (US21).
@@ -32,6 +40,23 @@ import { colors, radius, spacing, typography } from '@/ui/theme/theme';
  * L'anagrafica arriva dal listone gia' in RAM (`byId`, O(1)); le metriche si
  * leggono da SQLite al montaggio, una riga sola (US21-T2). Nessuna sezione
  * inventa valori: dove la fonte non copre il giocatore compare il perche'.
+ *
+ * --- Come e' composta, e perche' cosi' ---
+ * Il momento d'uso e' un'asta dal vivo: qualcuno ha appena gridato un nome e
+ * restano pochi secondi per decidere un rilancio. Da qui i tre strati, in
+ * ordine di quanto in fretta si devono leggere:
+ *
+ *   1. La testata, con il FVM composto piu' grande del nome. L'identita' e'
+ *      l'unica cosa che l'utente gia' sa; il valore no.
+ *   2. Le tessere numeriche: quattro numeri che si leggono senza mettere a
+ *      fuoco.
+ *   3. Le card, per chi ha il tempo di approfondire.
+ *
+ * Ogni card ha la forma che i suoi dati meritano, invece di quattro pile
+ * identiche di righe: il confronto gol/xG e' un grafico perche' li' il disegno
+ * dice qualcosa che i due numeri separati non dicono; lo storico infortuni e'
+ * una sequenza perche' tre stop brevi e un crociato non sono la stessa cosa
+ * anche a parita' di giorni totali.
  *
  * Il pulsante di assegnazione resta disponibile anche da qui: e' il momento in
  * cui l'utente ha appena visto i numeri e decide. Riusa `CategorySheet`, quindi
@@ -79,8 +104,10 @@ export default function PlayerDetailScreen() {
     );
   }
 
-  const mantra = parseMantraRoles(player.rm);
   const { economics, performance, analytics, injuries } = sections;
+  // Il filo cromatico della schermata: il colore del ruolo, che e' semantica di
+  // dominio (US1-T2) e non una scelta grafica fatta qui.
+  const accent = ROLE_COLORS[player.r];
 
   return (
     <>
@@ -89,61 +116,48 @@ export default function PlayerDetailScreen() {
       <ScrollView
         style={styles.container}
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xxl }]}
+        showsVerticalScrollIndicator={false}
       >
-        {/* --- Intestazione: chi è, e in che categoria l'ho messo --- */}
-        <View style={styles.hero}>
-          <RoleBadge role={player.r} />
-          <View style={styles.heroInfo}>
-            <Text style={styles.name}>{player.nome}</Text>
-            <Text style={styles.meta}>
-              {player.squadra} · {ROLE_LABELS[player.r]}
-              {mantra.length > 0 ? ` · ${mantra.join('/')}` : ''}
-            </Text>
-            {!player.is_active && <Text style={styles.ceduto}>Non più in Serie A</Text>}
-          </View>
+        {economics && (
+          <PlayerHero
+            player={player}
+            fvm={economics.headline.fvm}
+            quotazione={economics.headline.quotazione}
+            variazione={economics.headline.variazione}
+            trend={economics.headline.trend}
+            categoryName={category?.name ?? null}
+            categoryColor={category?.color ?? null}
+            onPressCategory={() => setSheetOpen(true)}
+          />
+        )}
 
-          <TouchableOpacity
-            onPress={() => setSheetOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel={
-              category ? `Categoria ${category.name}. Tocca per modificare.` : 'Assegna a una categoria'
-            }
-            style={[
-              styles.assign,
-              category
-                ? { backgroundColor: category.color, borderColor: category.color }
-                : { borderColor: colors.border },
-            ]}
-          >
-            <Text style={[styles.assignLabel, category ? styles.assignLabelOn : undefined]}>
-              {category ? category.name : '+ Categoria'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* --- Nessuna metrica: lo si dice una volta, in cima --- */}
         {loading && (
           <View style={styles.loading}>
-            <ActivityIndicator color={colors.accent} />
+            <ActivityIndicator color={accent} />
           </View>
         )}
+
+        {/* Nessuna metrica: lo si dice una volta sola, e si dice il perche'. */}
         {!loading && stats === undefined && (
-          <SectionCard title="Statistiche">
+          <SectionCard title="Statistiche" accent={accent}>
             <MetricUnavailable message={describeMissingData(undefined)} />
           </SectionCard>
         )}
 
-        {economics && (
-          <SectionCard title={economics.title}>
-            {economics.lines.map((line) => (
-              <StatBar key={line.label} {...line} />
+        {/* --- Strato 2: i quattro numeri che si leggono per primi --- */}
+        {performance.available && (
+          <View style={styles.tiles}>
+            {performance.tiles.map((tile) => (
+              <StatTile key={tile.label} {...tile} />
             ))}
-          </SectionCard>
+          </View>
         )}
 
         {performance.available && (
           <SectionCard
             title={performance.title}
+            accent={accent}
+            trailing={<RatingBadge band={performance.ratingBand} />}
             subtitle={stats?.season ? `Stagione ${stats.season}` : undefined}
           >
             {performance.lines.map((line) => (
@@ -155,15 +169,20 @@ export default function PlayerDetailScreen() {
         {analytics.available && (
           <SectionCard
             title={analytics.title}
+            accent={accent}
             trailing={<VerdictBadge verdict={analytics.goalVerdict} />}
             subtitle={
-              analytics.goalVerdict === 'over'
-                ? 'Ha segnato più di quanto le occasioni suggerissero: rendimento difficile da ripetere.'
-                : analytics.goalVerdict === 'under'
-                  ? 'Ha segnato meno delle occasioni create: margine di recupero.'
-                  : undefined
+              analytics.per90Reliable
+                ? undefined
+                : 'Pochi minuti giocati: i valori per 90′ sono poco indicativi.'
             }
           >
+            {/* L'elemento firma: realizzato contro atteso, stessa scala. */}
+            <XgDuel {...analytics.goalDuel} verdict={analytics.goalVerdict} />
+            <XgDuel {...analytics.assistDuel} verdict={analytics.assistVerdict} />
+
+            <View style={styles.divider} />
+
             {analytics.lines.map((line) => (
               <StatBar key={line.label} {...line} />
             ))}
@@ -171,27 +190,37 @@ export default function PlayerDetailScreen() {
         )}
 
         {injuries.available && (
-          <SectionCard title={injuries.title} trailing={<RiskBadge band={injuries.band} />}>
+          <SectionCard
+            title={injuries.title}
+            accent={accent}
+            trailing={<RiskBadge band={injuries.band} />}
+          >
             {injuries.lines.map((line) => (
               <StatBar key={line.label} {...line} />
             ))}
 
-            {stats !== undefined && stats.injuries.history.length > 0 && (
-              <View style={styles.history}>
-                {stats.injuries.history.slice(0, 6).map((spell, index) => (
-                  <View key={`${spell.season}-${index}`} style={styles.spell}>
-                    <Text style={styles.spellSeason}>{spell.season}</Text>
-                    <Text style={styles.spellType} numberOfLines={1}>
-                      {spell.type}
-                    </Text>
-                    <Text style={styles.spellDays}>
-                      {spell.days !== null ? `${spell.days} gg` : '—'}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
+            {stats !== undefined && <InjuryTimeline spells={stats.injuries.history} />}
           </SectionCard>
+        )}
+
+        {economics && (
+          <SectionCard title={economics.detailsTitle} accent={accent}>
+            {economics.details.map((line) => (
+              <StatBar key={line.label} {...line} />
+            ))}
+          </SectionCard>
+        )}
+
+        {/* Da dove vengono i numeri: chiude la scheda senza rubare attenzione. */}
+        {stats !== undefined && (
+          <Text style={styles.provenance}>
+            Metriche aggiornate al{' '}
+            {new Date(stats.updatedAt).toLocaleDateString('it-IT', {
+              day: 'numeric',
+              month: 'long',
+            })}
+            .
+          </Text>
         )}
       </ScrollView>
 
@@ -209,74 +238,22 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.md,
   },
-  hero: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  heroInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  name: {
-    color: colors.textPrimary,
-    fontSize: typography.title.fontSize,
-    fontWeight: '700',
-  },
-  meta: {
-    color: colors.textSecondary,
-    fontSize: typography.caption.fontSize,
-  },
-  ceduto: {
-    color: colors.danger,
-    fontSize: typography.caption.fontSize,
-    fontWeight: '700',
-  },
-  assign: {
-    borderWidth: 1,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    maxWidth: 130,
-  },
-  assignLabel: {
-    color: colors.textSecondary,
-    fontSize: typography.caption.fontSize,
-    fontWeight: '700',
-  },
-  assignLabelOn: {
-    color: '#0B1220',
-  },
-  loading: {
-    paddingVertical: spacing.lg,
-  },
-  history: {
-    marginTop: spacing.sm,
-    gap: spacing.xs,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    paddingTop: spacing.sm,
-  },
-  spell: {
+  tiles: {
     flexDirection: 'row',
     gap: spacing.sm,
-    alignItems: 'center',
   },
-  spellSeason: {
+  loading: {
+    paddingVertical: spacing.xl,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+    marginVertical: spacing.md,
+  },
+  provenance: {
     color: colors.textMuted,
-    fontSize: typography.caption.fontSize,
-    width: 44,
-    fontVariant: ['tabular-nums'],
-  },
-  spellType: {
-    flex: 1,
-    color: colors.textSecondary,
-    fontSize: typography.caption.fontSize,
-  },
-  spellDays: {
-    color: colors.textPrimary,
-    fontSize: typography.caption.fontSize,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: spacing.xs,
   },
 });
