@@ -1,6 +1,10 @@
 # Ambiente e Sicurezza
+# Le chiavi API vivono in `.env`. Questo repository e' pubblico: una chiave
+# committata finisce su GitHub, dove viene raccolta dai bot in pochi minuti.
+# `.env.example` fa eccezione perche' contiene solo la forma, mai i valori.
 .env
 .env.*
+!.env.example
 *.pem
 keys/
 

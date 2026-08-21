@@ -692,11 +692,25 @@ Tre regole, ognuna contro un modo diverso di fallire:
 `model_decommissioned`. I default (`llama-3.3-70b-versatile`, `llama-3.1-8b-instant`) vanno
 verificati sulla console prima della prima chiamata vera.
 
-**Le chiavi in `expo.extra` finiscono nel bundle e sono estraibili con `strings`.**
-Decisione consapevole per una build personale — le chiavi Groq gratuite si revocano dalla
-console in un istante — con due conseguenze: **l'APK non si condivide**, e se esce di mano
-le chiavi si revocano. Per una distribuzione vera servirebbe un proxy o
-`expo-secure-store`.
+**Le chiavi stanno in `.env`, non in `app.json`.**
+
+```
+EXPO_PUBLIC_GROQ_API_KEYS=gsk_prima,gsk_seconda
+```
+
+`app.json` è versionato e **questo repository è pubblico**: una chiave committata lì
+finisce su GitHub, dove i bot che scandagliano i commit la raccolgono in pochi minuti. È
+un ordine di grandezza peggio di "estraibile dall'APK", e per questo il campo
+`groqApiKeys` non esiste più in `app.json` — l'invito a sbagliare è stato tolto.
+`config.ts` legge comunque `extra` come ripiego, per chi lavorasse su un repo privato.
+
+`.env.example` è versionato e documenta la forma; `.gitignore` lo fa eccezione a `.env.*`.
+
+**Il prefisso `EXPO_PUBLIC_` dice che la variabile viene inlineata nel bundle**, ed è
+inevitabile: non si chiama un'API dal dispositivo senza portarci la credenziale. `.env`
+toglie il segreto da *git*, non dall'APK. Restano due conseguenze: **l'APK non si
+condivide**, e se esce di mano le chiavi si revocano dalla console Groq. Per una
+distribuzione vera servirebbe un proxy o `expo-secure-store`.
 
 ### Indice Modificatore
 

@@ -3,21 +3,30 @@ import Constants from 'expo-constants';
 /**
  * Configurazione dell'accesso a Groq.
  *
- * --- AVVERTENZA SULLE CHIAVI ---
- * Un'applicazione Expo **impacchetta `expo.extra` dentro il bundle**. Le chiavi
- * qui sotto sono quindi estraibili da chiunque abbia l'APK, con un `strings`.
+ * --- DOVE VANNO LE CHIAVI, E DOVE NON VANNO ---
+ * In `.env`, che e' gitignorato:
  *
- * E' una scelta consapevole per una build personale: le chiavi Groq del piano
- * gratuito sono revocabili dalla console in un istante, e il costo di un abuso
- * e' un rate limit, non una fattura. Le due conseguenze pratiche, pero', vanno
- * ricordate:
+ *     EXPO_PUBLIC_GROQ_API_KEYS=gsk_prima,gsk_seconda,gsk_terza
  *
- *   - **l'APK non si condivide**;
- *   - se esce di mano, si revocano le chiavi dalla console Groq.
+ * **Non in `app.json`.** Quel file e' versionato e questo repository e'
+ * pubblico: una chiave committata li' finisce su GitHub, dove i bot che
+ * scandagliano i commit la raccolgono in pochi minuti. E' un ordine di
+ * grandezza peggio di "estraibile dall'APK".
  *
- * Se un giorno l'app dovesse essere distribuita, la strada e' un proxy lato
- * server oppure chiavi inserite a runtime e conservate in `expo-secure-store`:
- * entrambe tolgono il segreto dal pacchetto, che e' l'unica soluzione vera.
+ * --- Restano comunque dentro il bundle ---
+ * Il prefisso `EXPO_PUBLIC_` dice esattamente questo: la variabile viene
+ * inlineata nel pacchetto a tempo di build. Non c'e' modo di chiamare un'API
+ * dal dispositivo senza portarci la credenziale — `.env` toglie il segreto da
+ * *git*, non dall'APK.
+ *
+ * Per una build personale e' accettabile: le chiavi Groq gratuite si revocano
+ * dalla console in un istante e il costo di un abuso e' un rate limit, non una
+ * fattura. Restano due conseguenze pratiche: **l'APK non si condivide**, e se
+ * esce di mano le chiavi si revocano.
+ *
+ * Per una distribuzione vera servirebbe un proxy lato server, oppure chiavi
+ * inserite a runtime e conservate in `expo-secure-store`: entrambe tolgono il
+ * segreto dal pacchetto, che e' l'unica soluzione davvero risolutiva.
  */
 
 interface GroqExtra {
@@ -34,10 +43,20 @@ function extra(): GroqExtra {
 /**
  * Le chiavi, come array.
  *
- * Si accetta anche una stringa separata da virgole: `app.json` regge entrambe
- * le forme, e chi incolla da un `.env` produce naturalmente la seconda.
+ * Si legge **prima `.env`** e solo dopo `app.json`: l'ordine non e' un
+ * dettaglio, e' cio' che rende il percorso sicuro anche quello predefinito.
+ * Chi segue il primo suggerimento che trova non finisce per committare un
+ * segreto.
+ *
+ * Il fallback su `extra` resta per chi lavora su un repository privato, dove
+ * `app.json` e' un posto legittimo.
  */
 export function apiKeys(): string[] {
+  const daEnv = process.env.EXPO_PUBLIC_GROQ_API_KEYS;
+  if (typeof daEnv === 'string' && daEnv.trim() !== '') {
+    return daEnv.split(',');
+  }
+
   const raw = extra().groqApiKeys;
   if (Array.isArray(raw)) return raw;
   if (typeof raw === 'string') return raw.split(',');
@@ -61,11 +80,19 @@ export function baseUrl(): string {
  * garanzia.
  */
 export function modelComplex(): string {
-  return extra().groqModelComplex ?? 'llama-3.3-70b-versatile';
+  return (
+    process.env.EXPO_PUBLIC_GROQ_MODEL_COMPLEX ??
+    extra().groqModelComplex ??
+    'llama-3.3-70b-versatile'
+  );
 }
 
 export function modelFast(): string {
-  return extra().groqModelFast ?? 'llama-3.1-8b-instant';
+  return (
+    process.env.EXPO_PUBLIC_GROQ_MODEL_FAST ??
+    extra().groqModelFast ??
+    'llama-3.1-8b-instant'
+  );
 }
 
 /** `false` quando non c'e' nemmeno una chiave: la UI puo' nascondere l'agente. */
