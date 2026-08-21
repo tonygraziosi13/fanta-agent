@@ -1,5 +1,11 @@
 import { getDb } from '@/core/db/client';
-import { rowToOpponent, type Opponent, type OpponentDbRow } from '@/domain/opponent';
+import {
+  abbinaRinomine,
+  chiaveNome,
+  rowToOpponent,
+  type Opponent,
+  type OpponentDbRow,
+} from '@/domain/opponent';
 import type { SeedTeam } from '@/core/parsing/statoAstaParser';
 
 /**
@@ -131,29 +137,63 @@ export async function saveOpponentState(opponent: Opponent): Promise<void> {
  * dispositivo e' la fonte di verita' dal momento dell'import in poi, e il seme
  * e' una fotografia di quando lo scraper ha girato.
  *
- * Restituisce i nomi aggiunti: chi preme il pulsante deve poter vedere *cosa* e'
- * cambiato, non un generico "fatto".
+ * Riallinea anche le squadre **rinominate** (vedi `abbinaRinomine`): senza,
+ * chi cambia nome finirebbe al tavolo due volte, e la copia coi crediti pieni
+ * sembrerebbe un avversario che puo' ancora rilanciare.
+ *
+ * Restituisce cosa e' cambiato e non un generico "fatto": chi preme il pulsante
+ * deve poter smentire un accoppiamento che non torna.
  */
+export interface MergeEsito {
+  /** Squadre che al tavolo non c'erano. */
+  aggiunte: string[];
+  /** Squadre gia' al tavolo che hanno cambiato nome, non identita'. */
+  rinominate: Array<{ da: string; a: string }>;
+}
+
 export async function mergeOpponents(
   configId: number,
   teams: SeedTeam[]
-): Promise<string[]> {
+): Promise<MergeEsito> {
   const db = await getDb();
   const now = Date.now();
 
-  const esistenti = await db.getAllAsync<{ nome: string }>(
-    'SELECT nome FROM opponents WHERE config_id = ?',
+  const esistenti = await db.getAllAsync<{ id: number; nome: string; proprietario: string | null }>(
+    'SELECT id, nome, proprietario FROM opponents WHERE config_id = ?',
     [configId]
   );
   // Confronto normalizzato: il sito puo' cambiare spaziatura o maiuscole di un
   // nome senza che sia un'altra squadra, e re-inserirla creerebbe un doppione
   // con la rosa vuota accanto a quella vera.
   const gia = new Set(esistenti.map((r) => chiaveNome(r.nome)));
-  const nuove = teams.filter((t) => !gia.has(chiaveNome(t.nome)));
+  const candidate = teams.filter((t) => !gia.has(chiaveNome(t.nome)));
 
-  if (nuove.length === 0) return [];
+  // --- Rinomine, prima di decidere chi e' nuovo ---
+  // Una rinomina cambia due esiti in una volta: la squadra "nuova" non e' nuova,
+  // e quella che manca dall'elenco non se n'e' andata. La regola sta nel dominio
+  // (`abbinaRinomine`) perche' e' un giudizio sull'identita' di un avversario, e
+  // qui non sarebbe verificabile senza un database.
+  const nelSeme = new Set(teams.map((t) => chiaveNome(t.nome)));
+  const rinomine = abbinaRinomine(
+    candidate,
+    esistenti.filter((r) => !nelSeme.has(chiaveNome(r.nome)))
+  );
+  const rinominateChiavi = new Set(rinomine.map(({ nuova }) => chiaveNome(nuova.nome)));
+  const nuove = candidate.filter((t) => !rinominateChiavi.has(chiaveNome(t.nome)));
+
+  if (nuove.length === 0 && rinomine.length === 0) return { aggiunte: [], rinominate: [] };
 
   await db.withTransactionAsync(async () => {
+    // Prima le rinomine: sono UPDATE su righe che restano le stesse, e farle
+    // dentro la transazione degli INSERT significa che il tavolo non passa mai
+    // per uno stato con la squadra vecchia e quella nuova insieme.
+    for (const { nuova, vecchia } of rinomine) {
+      await db.runAsync(
+        'UPDATE opponents SET nome = ?, proprietario = ?, updated_at = ? WHERE id = ?',
+        [nuova.nome, nuova.proprietario, now, vecchia.id]
+      );
+    }
+
     const statement = await db.prepareAsync(
       `INSERT INTO opponents
          (config_id, nome, proprietario, is_me, crediti,
@@ -182,9 +222,8 @@ export async function mergeOpponents(
     }
   });
 
-  return nuove.map((t) => t.nome);
-}
-
-function chiaveNome(nome: string): string {
-  return nome.trim().replace(/\s+/g, ' ').toLowerCase();
+  return {
+    aggiunte: nuove.map((t) => t.nome),
+    rinominate: rinomine.map(({ nuova, vecchia }) => ({ da: vecchia.nome, a: nuova.nome })),
+  };
 }

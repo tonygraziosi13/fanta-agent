@@ -4,6 +4,7 @@ import {
   listOpponents,
   mergeOpponents,
   replaceOpponents,
+  type MergeEsito,
 } from '@/core/repositories/opponentsRepository';
 import type { Opponent } from '@/domain/opponent';
 import type { ClassicRole } from '@/domain/roles';
@@ -39,11 +40,14 @@ interface OpponentsState {
     raw: string,
     configId: number
   ) => Promise<{ ok: boolean; imported: number; skipped: number; error?: string }>;
-  /** Aggiunge solo le squadre mancanti: sicuro anche ad asta iniziata. */
+  /**
+   * Aggiunge le squadre mancanti e riallinea quelle rinominate: sicuro anche ad
+   * asta iniziata, perche' non cancella mai una riga con una rosa dentro.
+   */
   mergeSeed: (
     raw: string,
     configId: number
-  ) => Promise<{ ok: boolean; aggiunte: string[]; error?: string }>;
+  ) => Promise<{ ok: boolean; esito: MergeEsito; error?: string }>;
   clear: () => void;
 }
 
@@ -123,22 +127,23 @@ export const useOpponentsStore = create<OpponentsState>((set, get) => ({
   },
 
   mergeSeed: async (raw, configId) => {
+    const vuoto: MergeEsito = { aggiunte: [], rinominate: [] };
     const outcome = parseStatoAsta(raw);
     if (!outcome.ok) {
       set({ error: outcome.error });
-      return { ok: false, aggiunte: [], error: outcome.error };
+      return { ok: false, esito: vuoto, error: outcome.error };
     }
 
     try {
-      const aggiunte = await mergeOpponents(configId, outcome.value.teams);
+      const esito = await mergeOpponents(configId, outcome.value.teams);
       // Si ricarica solo se qualcosa e' cambiato: rileggere nove righe per
       // scoprire che sono le stesse farebbe ridisegnare la schermata per niente.
-      if (aggiunte.length > 0) await get().load(configId);
-      return { ok: true, aggiunte };
+      if (esito.aggiunte.length > 0 || esito.rinominate.length > 0) await get().load(configId);
+      return { ok: true, esito };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       set({ error: message });
-      return { ok: false, aggiunte: [], error: message };
+      return { ok: false, esito: vuoto, error: message };
     }
   },
 

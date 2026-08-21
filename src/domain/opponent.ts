@@ -116,3 +116,64 @@ export function offertaMassima(opponent: Opponent): number {
   if (slotRimanenti(opponent) <= 0) return 0;
   return Math.max(opponent.creditiResidui, 0);
 }
+
+/** Il minimo che serve per riconoscere una squadra: come si chiama e di chi e'. */
+export interface Identita {
+  nome: string;
+  proprietario: string | null;
+}
+
+/** Nomi e proprietari si confrontano normalizzati, mai grezzi. */
+export function chiaveNome(nome: string): string {
+  return nome.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/**
+ * Accoppia le squadre comparse con quelle scomparse: chi ha solo cambiato nome.
+ *
+ * --- Il problema che risolve ---
+ * Aggiornare la lega aggiunge soltanto, ed e' la scelta giusta a meta' d'asta:
+ * cancellare una riga significherebbe buttare una rosa costruita in due ore. Ma
+ * se un partecipante ribattezza la squadra, "aggiungi soltanto" lo mette al
+ * tavolo **due volte**, e la copia arriva coi crediti pieni — cioe' un
+ * avversario che non esiste e che secondo l'app puo' ancora rilanciare, proprio
+ * nella schermata che serve a sapere chi puo' rilanciare.
+ *
+ * --- L'unica prova disponibile e' il proprietario ---
+ * Il nome della squadra e' cambiato apposta; chi la possiede no.
+ *
+ * --- E si accoppia solo quando la prova e' univoca ---
+ * Un proprietario, una scomparsa, una comparsa. Con due candidate non c'e' modo
+ * di sapere quale sia diventata quale, e spostare una rosa sull'ipotesi
+ * sbagliata e' irreversibile: meglio due righe e la decisione all'utente. Un
+ * proprietario vuoto non accoppia niente — accomunerebbe fra loro tutte le
+ * squadre di cui non sappiamo nulla, che e' l'assenza di prova, non una prova.
+ */
+export function abbinaRinomine<A extends Identita, B extends Identita>(
+  comparse: ReadonlyArray<A>,
+  scomparse: ReadonlyArray<B>
+): Array<{ nuova: A; vecchia: B }> {
+  const perProprietario = <T extends Identita>(voci: ReadonlyArray<T>): Map<string, T[]> => {
+    const indice = new Map<string, T[]>();
+    for (const voce of voci) {
+      if (voce.proprietario === null || voce.proprietario.trim() === '') continue;
+      const k = chiaveNome(voce.proprietario);
+      indice.set(k, [...(indice.get(k) ?? []), voce]);
+    }
+    return indice;
+  };
+
+  const vecchiePer = perProprietario(scomparse);
+  const abbinate: Array<{ nuova: A; vecchia: B }> = [];
+
+  for (const [proprietario, gruppo] of perProprietario(comparse)) {
+    const vecchie = vecchiePer.get(proprietario);
+    const nuova = gruppo[0];
+    const vecchia = vecchie?.[0];
+    if (gruppo.length !== 1 || vecchie?.length !== 1) continue;
+    if (nuova === undefined || vecchia === undefined) continue;
+    abbinate.push({ nuova, vecchia });
+  }
+
+  return abbinate;
+}

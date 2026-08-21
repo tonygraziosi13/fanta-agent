@@ -180,13 +180,21 @@ export default function AstaLiveScreen() {
     if (!esito.ok) {
       return { tipo: 'errore', messaggio: esito.error ?? 'Aggiornamento non riuscito.' };
     }
-    if (esito.aggiunte.length === 0) {
+    const { aggiunte, rinominate } = esito.esito;
+    if (aggiunte.length === 0 && rinominate.length === 0) {
       return { tipo: 'niente', messaggio: 'Nessuna squadra nuova rispetto a quelle già al tavolo.' };
     }
-    return {
-      tipo: 'ok',
-      messaggio: `Aggiunt${esito.aggiunte.length === 1 ? 'a' : 'e'} ${esito.aggiunte.join(', ')}.`,
-    };
+
+    // Le rinomine si dicono per esteso: una squadra che cambia nome da sola,
+    // senza una riga che lo spieghi, sembra sparita e sostituita da un'altra.
+    const parti: string[] = [];
+    if (aggiunte.length > 0) {
+      parti.push(`Aggiunt${aggiunte.length === 1 ? 'a' : 'e'} ${aggiunte.join(', ')}`);
+    }
+    for (const { da, a } of rinominate) {
+      parti.push(`${da} ora si chiama ${a}`);
+    }
+    return { tipo: 'ok', messaggio: `${parti.join('. ')}.` };
   }, []);
 
   // --- Gate: senza partecipanti non c'e' asta da seguire.

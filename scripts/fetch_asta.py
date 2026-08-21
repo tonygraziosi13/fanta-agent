@@ -43,6 +43,9 @@ def report(merge: asta.Merge, percorso: Path) -> None:
             stato = "nuova"
         elif squadra.nome_squadra in merge.sparite:
             stato = "non piu' in elenco"
+        elif any(n == squadra.nome_squadra for _, n in merge.rinominate):
+            era = next(v for v, n in merge.rinominate if n == squadra.nome_squadra)
+            stato = f"rinominata (era {era})"
         print(
             f"  {'>' if squadra.sono_io else ' '} {squadra.nome_squadra:<28} "
             f"{(squadra.proprietario or '—'):<18} {squadra.crediti_residui:>4} cr  "
@@ -63,9 +66,16 @@ def report(merge: asta.Merge, percorso: Path) -> None:
 
     print(f"\n  nuove      : {len(merge.nuove)}")
     print(f"  preservate : {len(merge.preservate)}")
+    if merge.rinominate:
+        # Va detto: e' l'unico caso in cui lo script cambia l'identita' di una
+        # squadra gia' salvata, e chi legge deve poter smentire l'accoppiamento.
+        coppie = ", ".join(f"{v} -> {n}" for v, n in merge.rinominate)
+        print(f"  rinominate : {len(merge.rinominate)} ({coppie})")
+        print("  (stesso proprietario: crediti, slot e rosa passano al nome nuovo)")
     if merge.sparite:
-        # Non cancellate di proposito: distinguere "ha lasciato la lega" da "ha
-        # rinominato la squadra" e' impossibile, e una rosa costruita in asta non
+        # Non cancellate di proposito: qui il proprietario non ha permesso di
+        # riconoscere una rinomina, quindi "ha lasciato la lega" e "si e'
+        # ribattezzata" restano indistinguibili — e una rosa costruita in asta non
         # si butta via su un'ipotesi.
         print(f"  sparite    : {len(merge.sparite)} ({', '.join(merge.sparite)})")
         print("  (restano nel file: potrebbero essere solo state rinominate)")

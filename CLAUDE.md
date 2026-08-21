@@ -612,8 +612,23 @@ Cinque cose scoperte facendolo girare, nessuna deducibile dal codice:
 **Un rilancio non azzera niente**: le squadre già nel file mantengono crediti, slot e
 rosa, e solo le nuove partono dai default. È ciò che rende sicuro rigenerare a metà asta
 quando entra un partecipante in ritardo. Una squadra sparita dall'elenco resta in coda e
-il report la segnala: distinguere "ha lasciato la lega" da "ha rinominato la squadra" è
-impossibile dall'esterno, e una rosa costruita in asta non si butta su un'ipotesi.
+il report la segnala, perché una rosa costruita in asta non si butta su un'ipotesi.
+
+**Un caso però si distingue eccome: la rinomina.** Se una squadra sparisce e un'altra
+compare *con lo stesso proprietario*, non è un abbandono — il nome è cambiato apposta,
+chi la possiede no. Tenerle entrambe metterebbe la stessa persona due volte al tavolo,
+con 500 crediti sulla copia: un avversario inventato che secondo l'app può ancora
+rilanciare, proprio nella schermata che serve a sapere chi può rilanciare. La squadra
+nuova eredita quindi crediti, slot e rosa della vecchia. L'accoppiamento è **univoco da
+entrambi i lati** (un proprietario, una scomparsa, una comparsa) e un proprietario vuoto
+non accoppia niente: con due candidate non si indovina quale sia diventata quale, e
+spostare una rosa sull'ipotesi sbagliata è irreversibile.
+
+La stessa regola vive **due volte**, e non è una duplicazione da eliminare: `unisci` in
+`asta.py` riconcilia il file con lo scraping, `abbinaRinomine` in `domain/opponent.ts`
+riconcilia il **database del telefono** col seme. Sono due storie diverse — il seme può
+essere già stato riconciliato a monte mentre la riga vecchia è rimasta solo sul
+dispositivo, che è esattamente cosa succede se si rigenera il file dopo aver importato.
 
 ### Metriche in RAM: la deroga consapevole
 
@@ -832,7 +847,8 @@ di scorrimento, fuori dalla portata di un tocco distratto mentre il banditore co
   "aggiorna le statistiche" lascerebbe credere che il dispositivo vada a leggere Understat.
   Dopo un aggiornamento riuscito svuota la cache delle metriche in RAM, che è della
   versione precedente.
-- *Aggiorna la lega* passa da `mergeOpponents`, che **aggiunge soltanto**. È
+- *Aggiorna la lega* passa da `mergeOpponents`, che **aggiunge e riallinea le
+  rinominate**, senza mai cancellare una riga. È
   deliberatamente diversa da `replaceOpponents`: quella cancella e riscrive — giusta per
   il primo import, letale a metà asta, perché riporterebbe tutti a crediti pieni e rose
   vuote senza chiedere niente. Il riconoscimento è su nome normalizzato: "Atletico  Bar"
@@ -866,7 +882,7 @@ Prima di scrivere un client LLM reale, consulta la skill `claude-api`.
 I test coprono **solo logica pura** — nessuna dipendenza nativa, nessun SQLite. Le suite
 in `__tests__/` rispecchiano i moduli puri corrispondenti: `listoneMapper`, `selectors`,
 `pipeline`, `configuration`, `datasetMapper`, `syncEngine`, `metrics`, `modifierIndex`,
-`auctionTransaction`, `statoAsta`, `budgetAlert`, `watchlistFill`.
+`auctionTransaction`, `statoAsta`, `budgetAlert`, `watchlistFill`, `rinomine`.
 
 `datasetContract.test.ts` è l'unico che legge dal disco: verifica sui file veri in
 `dataset/` che il formato scritto da `scripts/build_dataset.py` sia quello che

@@ -222,6 +222,8 @@ class Merge:
     preservate: list[str]
     """Erano nel file ma il sito non le elenca piu'."""
     sparite: list[str]
+    """Coppie (nome vecchio, nome nuovo) riconosciute dal proprietario."""
+    rinominate: list[tuple[str, str]]
 
 
 def unisci(
@@ -239,10 +241,22 @@ def unisci(
     ore di lavoro.
 
     Una squadra sparita dall'elenco **non viene cancellata**: resta in coda e il
-    report la segnala. Distinguere "ha lasciato la lega" da "ha rinominato la
-    squadra" e' impossibile dall'esterno, e cancellare una rosa costruita in asta
-    e' irreversibile. E' lo stesso istinto di `quotazioni.merge_with_previous`,
-    che non toglie mai un giocatore dal listone.
+    report la segnala. Cancellare una rosa costruita in asta e' irreversibile, ed
+    e' lo stesso istinto di `quotazioni.merge_with_previous`, che non toglie mai
+    un giocatore dal listone.
+
+    --- La rinomina, pero', si riconosce ---
+    Un caso si distingue eccome, e ignorarlo costa caro: se una squadra sparisce
+    e un'altra compare **con lo stesso proprietario**, non e' un abbandono, e'
+    un cambio di nome. Tenerle entrambe metterebbe la stessa persona due volte al
+    tavolo, con 500 crediti a testa — cioe' un avversario inventato che secondo
+    l'app puo' ancora rilanciare. La squadra nuova eredita quindi crediti, slot e
+    rosa della vecchia, che sparisce davvero.
+
+    Il riconoscimento e' volutamente prudente: serve un proprietario non vuoto e
+    **una sola** candidata da entrambi i lati. Con due squadre sparite dello
+    stesso proprietario non si indovina chi e' diventata chi, e si ricade sul
+    comportamento di prima.
     """
     per_chiave = {
         chiave(str(voce.get("nome_squadra", ""))): voce
@@ -250,29 +264,44 @@ def unisci(
         if isinstance(voce, dict) and voce.get("nome_squadra")
     }
 
-    squadre: list[Squadra] = []
-    nuove: list[str] = []
-    preservate: list[str] = []
-    viste: set[str] = set()
-
+    # Si normalizza una volta sola: i nomi arrivano sia dal sito sia dal file, e
+    # confrontarli grezzi farebbe di "Atletico  Bar" un'altra squadra.
+    elenco: list[tuple[str, Optional[str], str]] = []
     for voce in partecipanti:
         # Si accetta sia "nome" sia ("nome", "proprietario"): il secondo e' cio'
         # che arriva dal sito, il primo tiene i test leggibili.
         grezzo, proprietario = voce if isinstance(voce, (tuple, list)) else (voce, None)
-
         # Gli spazi si collassano anche qui e non solo in `pulisci_nomi`: questa
         # funzione non deve dipendere dal fatto che chi la chiama abbia gia'
         # ripulito, o il file finirebbe con due grafie della stessa squadra.
         nome = re.sub(r"\s+", " ", str(grezzo)).strip()
-        k = chiave(nome)
-        viste.add(k)
-        vecchia = per_chiave.get(k)
+        elenco.append((nome, proprietario, chiave(nome)))
 
+    viste = {k for _, _, k in elenco}
+    sparite_chiavi = [k for k in per_chiave if k not in viste]
+
+    # --- Rinomine ---
+    # Si guarda *prima* di costruire, perche' una rinomina cambia due esiti in
+    # una volta: la squadra nuova non e' nuova, e la sparita non e' sparita.
+    ereditata = _accoppia_rinomine(elenco, per_chiave, sparite_chiavi)
+
+    squadre: list[Squadra] = []
+    nuove: list[str] = []
+    preservate: list[str] = []
+    rinominate: list[tuple[str, str]] = []
+
+    for nome, proprietario, k in elenco:
         # L'indicazione esplicita vince sull'euristica del nickname: quella
         # propone, `--mia-squadra` dispone.
         mio = chiave(nome) == chiave(mia_squadra) if mia_squadra else sono_lo_stesso(
             proprietario, utente
         )
+
+        vecchia = per_chiave.get(k)
+        if vecchia is None and k in ereditata:
+            chiave_vecchia = ereditata[k]
+            vecchia = per_chiave[chiave_vecchia]
+            rinominate.append((str(vecchia["nome_squadra"]), nome))
 
         if vecchia is None:
             squadre.append(squadra_iniziale(nome, proprietario, mio))
@@ -293,12 +322,17 @@ def unisci(
                 rosa=list(vecchia.get("rosa") or []),
             )
         )
-        preservate.append(nome)
+        if k in per_chiave:
+            preservate.append(nome)
 
+    assorbite = set(ereditata.values())
     sparite: list[str] = []
-    for k, vecchia in per_chiave.items():
-        if k in viste:
+    for k in sparite_chiavi:
+        # Una rinominata non e' sparita: e' gia' nell'elenco col nome nuovo, e
+        # rimetterla in coda creerebbe il doppione che si voleva evitare.
+        if k in assorbite:
             continue
+        vecchia = per_chiave[k]
         nome = str(vecchia["nome_squadra"])
         slot = vecchia.get("slot_liberi")
         squadre.append(
@@ -313,7 +347,55 @@ def unisci(
         )
         sparite.append(nome)
 
-    return Merge(squadre=squadre, nuove=nuove, preservate=preservate, sparite=sparite)
+    return Merge(
+        squadre=squadre,
+        nuove=nuove,
+        preservate=preservate,
+        sparite=sparite,
+        rinominate=rinominate,
+    )
+
+
+def _accoppia_rinomine(
+    elenco: Sequence[tuple[str, Optional[str], str]],
+    per_chiave: dict[str, dict[str, Any]],
+    sparite_chiavi: Sequence[str],
+) -> dict[str, str]:
+    """
+    Quali squadre nuove sono in realta' vecchie squadre rinominate.
+
+    Restituisce {chiave del nome nuovo: chiave del nome vecchio}.
+
+    L'unica prova disponibile e' il **proprietario**: il nome della squadra e'
+    cambiato apposta, mentre chi la possiede no. Si accoppia solo quando la
+    corrispondenza e' univoca da entrambi i lati — un proprietario, una squadra
+    sparita, una squadra nuova. Con due sparite dello stesso proprietario non
+    c'e' modo di sapere quale sia diventata quale, e una rosa costruita in asta
+    non si sposta su un'ipotesi.
+    """
+    def per_proprietario(coppie: Sequence[tuple[str, Optional[str]]]) -> dict[str, list[str]]:
+        indice: dict[str, list[str]] = {}
+        for k, proprietario in coppie:
+            # Un proprietario vuoto accoppierebbe fra loro tutte le squadre di
+            # cui non sappiamo niente: e' l'assenza di prova, non una prova.
+            if not proprietario:
+                continue
+            indice.setdefault(chiave(str(proprietario)), []).append(k)
+        return indice
+
+    candidate_nuove = per_proprietario(
+        [(k, proprietario) for _, proprietario, k in elenco if k not in per_chiave]
+    )
+    candidate_vecchie = per_proprietario(
+        [(k, per_chiave[k].get("proprietario")) for k in sparite_chiavi]
+    )
+
+    accoppiate: dict[str, str] = {}
+    for proprietario, nuove_k in candidate_nuove.items():
+        vecchie_k = candidate_vecchie.get(proprietario, [])
+        if len(nuove_k) == 1 and len(vecchie_k) == 1:
+            accoppiate[nuove_k[0]] = vecchie_k[0]
+    return accoppiate
 
 
 def scrivi(squadre: Sequence[Squadra], path: Path = OUTPUT) -> Path:

@@ -135,6 +135,77 @@ class UnisciTest(unittest.TestCase):
         self.assertEqual(merge.squadre[1].rosa, [{"id": 1}])
         self.assertEqual(merge.squadre[1].crediti_residui, 42)
 
+    def test_una_rinomina_non_crea_un_doppione(self):
+        """
+        Il caso vero: ginso rinomina "COCO FANS" in "FRATELLI MANNA SRL". Senza
+        riconoscerlo si ritroverebbe due volte al tavolo, con 500 crediti a
+        testa — cioe' un avversario inventato che secondo l'app puo' rilanciare.
+        """
+        precedente = [
+            salvata("COCO FANS", crediti=310, proprietario="ginso", rosa=[{"id": 7, "prezzo": 41}])
+        ]
+
+        merge = unisci([("FRATELLI MANNA SRL", "ginso")], precedente)
+
+        self.assertEqual([s.nome_squadra for s in merge.squadre], ["FRATELLI MANNA SRL"])
+        self.assertEqual(merge.rinominate, [("COCO FANS", "FRATELLI MANNA SRL")])
+        self.assertEqual(merge.sparite, [])
+        self.assertEqual(merge.nuove, [])
+
+    def test_la_rinominata_porta_con_se_crediti_slot_e_rosa(self):
+        """Il nome cambia, l'asta gia' giocata no."""
+        precedente = [
+            salvata(
+                "COCO FANS",
+                crediti=310,
+                slot={"P": 2, "D": 6, "C": 8, "A": 6},
+                rosa=[{"id": 7, "prezzo": 41}],
+                proprietario="ginso",
+                sono_io=True,
+            )
+        ]
+
+        squadra = unisci([("FRATELLI MANNA SRL", "ginso")], precedente).squadre[0]
+
+        self.assertEqual(squadra.crediti_residui, 310)
+        self.assertEqual(squadra.slot_liberi, {"P": 2, "D": 6, "C": 8, "A": 6})
+        self.assertEqual(squadra.rosa, [{"id": 7, "prezzo": 41}])
+        self.assertTrue(squadra.sono_io)
+
+    def test_due_sparite_dello_stesso_proprietario_non_si_indovinano(self):
+        """
+        Con due candidate non c'e' modo di sapere quale sia diventata quale, e
+        spostare una rosa costruita in asta su un'ipotesi e' irreversibile. Si
+        ricade sul comportamento prudente di prima.
+        """
+        precedente = [
+            salvata("Prima", proprietario="ginso", rosa=[{"id": 1}]),
+            salvata("Seconda", proprietario="ginso", rosa=[{"id": 2}]),
+        ]
+
+        merge = unisci([("Terza", "ginso")], precedente)
+
+        self.assertEqual(merge.rinominate, [])
+        self.assertEqual(merge.nuove, ["Terza"])
+        self.assertEqual(sorted(merge.sparite), ["Prima", "Seconda"])
+
+    def test_senza_proprietario_non_si_accoppia_niente(self):
+        """
+        Un proprietario vuoto accoppierebbe fra loro tutte le squadre di cui non
+        sappiamo niente: e' l'assenza di prova, non una prova.
+        """
+        merge = unisci(["Nuova"], [salvata("Vecchia", rosa=[{"id": 1}])])
+
+        self.assertEqual(merge.rinominate, [])
+        self.assertEqual(merge.sparite, ["Vecchia"])
+
+    def test_proprietari_diversi_restano_squadre_diverse(self):
+        merge = unisci([("Nuova", "mario")], [salvata("Vecchia", proprietario="ginso")])
+
+        self.assertEqual(merge.rinominate, [])
+        self.assertEqual(merge.nuove, ["Nuova"])
+        self.assertEqual(merge.sparite, ["Vecchia"])
+
     def test_l_ordine_e_quello_del_sito(self):
         precedente = [salvata("Zeta"), salvata("Alfa")]
 
